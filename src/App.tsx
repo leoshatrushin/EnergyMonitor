@@ -1,9 +1,11 @@
 import { createRoot } from 'react-dom/client';
+import Chart from './Chart';
 
 const App = () => {
     return (
         <div>
             <h1>Energy Monitor!</h1>
+            <Chart />
         </div>
     );
 };
