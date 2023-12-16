@@ -4,3 +4,5 @@ dist/
 .DS_Store
 coverage/
 .vscode/
+esp/build/
+esp/.cache/
