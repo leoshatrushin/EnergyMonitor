@@ -1,8 +1,11 @@
+**/.DS_Store
+**/.vscode/
+
 node_modules/
-dist/
-.env
-.DS_Store
-coverage/
-.vscode/
+
 esp/build/
 esp/.cache/
+esp/env.h
+
+web/dist/
+web/.env
