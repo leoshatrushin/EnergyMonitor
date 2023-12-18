@@ -1,46 +1,84 @@
-#include <stdio.h>
-#include <inttypes.h>
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_chip_info.h"
-#include "esp_flash.h"
-#include "esp_system.h"
+#include "main.h"
+#include "socket_task.h"
+#include "../env.h"
+#include "esp_log.h"
+#include "nvs_flash.h"
+#include "esp_wifi.h"
 
-void app_main(void)
-{
-    printf("Hello world!\n");
+#define TAG "main"
+#define WIFI_RECONNECT_DELAY_MS 1000
+#define WIFI_CONNECTED_BIT BIT0
 
-    /* Print chip information */
-    esp_chip_info_t chip_info;
-    uint32_t flash_size;
-    esp_chip_info(&chip_info);
-    printf("This is %s chip with %d CPU core(s), %s%s%s%s, ",
-           CONFIG_IDF_TARGET,
-           chip_info.cores,
-           (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
-           (chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
-           (chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
-           (chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
+EventGroupHandle_t s_wifi_event_group;
+TaskHandle_t socket_task_handle;
 
-    unsigned major_rev = chip_info.revision / 100;
-    unsigned minor_rev = chip_info.revision % 100;
-    printf("silicon revision v%d.%d, ", major_rev, minor_rev);
-    if(esp_flash_get_size(NULL, &flash_size) != ESP_OK) {
-        printf("Get flash size failed");
+static void wifi_start_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    ESP_ERROR_CHECK(esp_wifi_connect());
+}
+
+static void got_ip_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&((ip_event_got_ip_t*) event_data)->ip_info.ip));
+    // close sockets
+    // create sockets
+}
+
+static void disconnect_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    ESP_LOGI(TAG, "wifi disconnected with reason: %d", ((wifi_event_sta_disconnected_t*)event_data)->reason);
+    // close sockets
+    // create sockets
+    ESP_LOGI(TAG, "attempting to reconnect");
+    ESP_ERROR_CHECK(esp_wifi_connect());
+}
+
+void app_main(void) {
+    // initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_ERROR_CHECK(nvs_flash_init());
+    }
+    ESP_LOGI(TAG, "nvs init finished");
+
+    // initialize indicator for wifi events
+    s_wifi_event_group = xEventGroupCreate();
+    if (s_wifi_event_group == NULL) {
+        ESP_LOGE(TAG, "Failed to create wifi event group; out of memory");
         return;
     }
 
-    printf("%" PRIu32 "MB %s flash\n", flash_size / (uint32_t)(1024 * 1024),
-           (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+    // initialize wifi
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
+    // configure wifi
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+            .threshold.authmode = WIFI_MIN_AUTHMODE,
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
-    for (int i = 10; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    printf("Restarting now.\n");
-    fflush(stdout);
-    esp_restart();
+    // add event handlers and start wifi
+    esp_event_handler_instance_t wifi_start_handler_instance;
+    esp_event_handler_instance_t got_ip_handler_instance;
+    esp_event_handler_instance_t disconnect_handler_instance;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_START,
+                                                        &wifi_start_handler, NULL, &wifi_start_handler_instance));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                        &got_ip_handler, NULL, &got_ip_handler_instance));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+                                                        &disconnect_handler, NULL, &disconnect_handler_instance));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_LOGI(TAG, "wifi init finished.");
+
+    // create socket task
+    xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);
 }
