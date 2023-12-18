@@ -29,8 +29,9 @@ static struct addrinfo cached_addrinfo;
 int open_hostname_clientfd() {
     // get a list of potential server addresses
     struct addrinfo hints = {
-        .ai_socktype = SOCK_STREAM, /* TCP socket */
+        .ai_socktype = SOCK_STREAM, /* streaming socket */
         .ai_flags = AI_NUMERICSERV | AI_ADDRCONFIG, /* use numeric port arg, IPvX only if configured */
+        .ai_protocol = IPPROTO_TCP, /* TCP */
     };
     struct addrinfo *listp, *p;
     if (getaddrinfo(SERVER_HOSTNAME, SERVER_PORT, &hints, &listp) < 0) {
