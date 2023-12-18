@@ -1,4 +1,5 @@
 #include "main.h"
+#include "wifi.h"
 #include "socket_task.h"
 #include "../env.h"
 #include "esp_log.h"
@@ -6,31 +7,10 @@
 #include "esp_wifi.h"
 
 #define TAG "main"
-#define WIFI_RECONNECT_DELAY_MS 1000
-#define WIFI_CONNECTED_BIT BIT0
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
-
-static void wifi_start_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    ESP_ERROR_CHECK(esp_wifi_connect());
-}
-
-static void got_ip_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&((ip_event_got_ip_t*) event_data)->ip_info.ip));
-    // close sockets
-    // create sockets
-}
-
-static void disconnect_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    ESP_LOGI(TAG, "wifi disconnected with reason: %d", ((wifi_event_sta_disconnected_t*)event_data)->reason);
-    // close sockets
-    // create sockets
-    ESP_LOGI(TAG, "attempting to reconnect");
-    ESP_ERROR_CHECK(esp_wifi_connect());
-}
+esp_event_loop_handle_t wifi_connect_event_loop_handle;
 
 void app_main(void) {
     // initialize NVS
@@ -65,6 +45,19 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    
+    // create wifi connect event loop
+    xEventGroupSetBits(s_wifi_event_group, WIFI_DISCONNECTED_BIT);
+    esp_event_loop_args_t wifi_connect_event_loop_cfg = {
+        .queue_size = 1,
+        .task_name = "wifi_connect_task",
+        .task_priority = 0,
+        .task_stack_size = 4096,
+        .task_core_id = tskNO_AFFINITY,
+    };
+    ESP_ERROR_CHECK(esp_event_loop_create(&wifi_connect_event_loop_cfg, &wifi_connect_event_loop_handle));
+    ESP_ERROR_CHECK(esp_event_handler_register_with(wifi_connect_event_loop_handle, WIFI_CONNECT_EVENT,
+                                                    WIFI_CONNECT_ATTEMPT, &wifi_connect_attempt_handler, NULL));
 
     // add event handlers and start wifi
     esp_event_handler_instance_t wifi_start_handler_instance;
@@ -75,9 +68,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                         &got_ip_handler, NULL, &got_ip_handler_instance));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
-                                                        &disconnect_handler, NULL, &disconnect_handler_instance));
+                                                        &wifi_disconnect_handler, NULL, &disconnect_handler_instance));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_LOGI(TAG, "wifi init finished.");
+    ESP_LOGI(TAG, "wifi init finished");
 
     // create socket task
     xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);

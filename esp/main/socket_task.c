@@ -1,4 +1,6 @@
+#include "socket_task.h"
 #include "main.h"
+#include "wifi.h"
 #include "utils.h"
 #include "../env.h"
 #include "esp_log.h"
