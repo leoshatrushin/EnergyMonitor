@@ -5,8 +5,14 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_wifi.h"
+#include "esp_adc/adc_oneshot.h"
 
 #define TAG "main"
+#define ADC_UNIT ADC_UNIT_1 // SAR ADC 1
+#define ADC_BITWIDTH ADC_BITWIDTH_DEFAULT // use maximum ADC bit width
+#define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
+#define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
+#define ADC_READ_INTERVAL_MS 10
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
@@ -74,4 +80,42 @@ void app_main(void) {
 
     // create socket task
     xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);
+
+    // init ADC
+    adc_oneshot_unit_handle_t adc1_handle;
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+
+    // configure ADC
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH,
+        .atten = ADC_ATTEN,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &config));
+
+    // init ADC calibration
+    adc_cali_handle_t adc_cali_handle = NULL;
+    ESP_LOGD(TAG, "calibration scheme version is %s", "Line Fitting");
+    adc_cali_line_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT,
+        .atten = ADC_ATTEN,
+        .bitwidth = ADC_BITWIDTH,
+    };
+    ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle));
+    ESP_LOGI(TAG, "ADC init finished");
+
+    // read ADC
+    int adc_raw, voltage;
+    while (1) {
+        if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
+            ESP_LOGD(TAG, "ADC read raw data: %d", adc_raw);
+            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage));
+            ESP_LOGD(TAG, "ADC read Cali Voltage: %d mV", voltage);
+        } else {
+            ESP_LOGW(TAG, "ADC read failed");
+        }
+        vTaskDelay(pdMS_TO_TICKS(ADC_READ_INTERVAL_MS));
+    }
 }
