@@ -5,8 +5,11 @@
 #include "../env.h"
 #include "esp_log.h"
 #include "netdb.h"
+#include "esp_tls.h"
 
 #define TAG "socket_task"
+extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
+extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
 
 int open_addrinfo_clientfd(struct addrinfo *p) {
     // create a socket descriptor
@@ -65,6 +68,11 @@ void socket_task(void *param) {
         xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
         char rx_buffer[128];
         int clientfd = open_hostname_clientfd();
+        esp_tls_cfg_t cfg = {
+            .cacert_buf = (const unsigned char *) server_root_cert_pem_start,
+            .cacert_bytes = server_root_cert_pem_end - server_root_cert_pem_start,
+            .tls_version = ESP_TLS_VER_TLS_1_3,
+        };
         while (1) {
             int err = send(clientfd, payload, strlen(payload), 0);
             if (err < 0) {
