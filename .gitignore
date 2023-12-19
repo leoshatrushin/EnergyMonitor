@@ -6,6 +6,7 @@ node_modules/
 esp/build/
 esp/.cache/
 esp/env.h
+esp/sdkconfig.old
 
 web/dist/
 web/.env
