@@ -6,6 +6,8 @@
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "esp_adc/adc_oneshot.h"
+#include "spi_flash_mmap.h"
+#include <sys/time.h>
 
 #define TAG "main"
 #define ADC_UNIT ADC_UNIT_1 // SAR ADC 1
@@ -13,6 +15,7 @@
 #define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
 #define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
 #define ADC_READ_INTERVAL_MS 10
+#define VOLTAGE_THRESHOLD 1500
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
@@ -106,13 +109,36 @@ void app_main(void) {
     ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle));
     ESP_LOGI(TAG, "ADC init finished");
 
+    // find the partition map in the partition table
+    const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
+    assert(partition != NULL);
+
+    // erase flash sector
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    ESP_LOGD(TAG, "Erase flash sector at %lld", tv.tv_sec);
+    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, SPI_FLASH_SEC_SIZE));
+    gettimeofday(&tv, NULL);
+    ESP_LOGD(TAG, "Erase flash sector finished at %lld", tv.tv_sec);
+
     // read ADC
     int adc_raw, voltage;
+    bool voltage_high = false;
+    int flash_addr = 0;
     while (1) {
         if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
-            ESP_LOGD(TAG, "ADC read raw data: %d", adc_raw);
+            ESP_LOGV(TAG, "ADC read raw data: %d", adc_raw);
             ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage));
-            ESP_LOGD(TAG, "ADC read Cali Voltage: %d mV", voltage);
+            ESP_LOGV(TAG, "ADC read Cali Voltage: %d mV", voltage);
+            if (voltage_high ^ (voltage > VOLTAGE_THRESHOLD)) {
+                voltage_high = !voltage_high;
+                gettimeofday(&tv, NULL);
+                ESP_LOGD(TAG, "Voltage %s at %lld", voltage_high ? "high" : "low", tv.tv_sec);
+                ESP_ERROR_CHECK(esp_partition_write(partition, 0, &tv.tv_sec, sizeof(int)));
+                gettimeofday(&tv, NULL);
+                ESP_LOGD(TAG, "Wrote %lld to flash", tv.tv_sec);
+                flash_addr += sizeof(int);
+            }
         } else {
             ESP_LOGW(TAG, "ADC read failed");
         }
