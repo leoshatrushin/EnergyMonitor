@@ -14,12 +14,17 @@
 #define ADC_BITWIDTH ADC_BITWIDTH_DEFAULT // use maximum ADC bit width
 #define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
 #define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
-#define ADC_READ_INTERVAL_MS 10
-#define VOLTAGE_THRESHOLD 1500
+#define ADC_READ_INTERVAL_MS 1000
+#define FLASH_SECTOR_SIZE 65536
+#define VOLTAGE_THRESHOLD 1800
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
 esp_event_loop_handle_t wifi_connect_event_loop_handle;
+
+int to_ms(struct timeval tv) {
+    return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
 
 void app_main(void) {
     // initialize NVS
@@ -100,7 +105,7 @@ void app_main(void) {
 
     // init ADC calibration
     adc_cali_handle_t adc_cali_handle = NULL;
-    ESP_LOGD(TAG, "calibration scheme version is %s", "Line Fitting");
+    ESP_LOGI(TAG, "calibration scheme version is %s", "Line Fitting");
     adc_cali_line_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT,
         .atten = ADC_ATTEN,
@@ -111,33 +116,45 @@ void app_main(void) {
 
     // find the partition map in the partition table
     const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
+    ESP_LOGI(TAG, "partition searched for");
     assert(partition != NULL);
+    ESP_LOGI(TAG, "partition found");
 
-    // erase flash sector
-    struct timeval tv;
+    // initialize flash sector
+    struct timeval tv, tvold;
+    gettimeofday(&tvold, NULL);
+    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, FLASH_SECTOR_SIZE));
     gettimeofday(&tv, NULL);
-    ESP_LOGD(TAG, "Erase flash sector at %lld", tv.tv_sec);
-    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, SPI_FLASH_SEC_SIZE));
-    gettimeofday(&tv, NULL);
-    ESP_LOGD(TAG, "Erase flash sector finished at %lld", tv.tv_sec);
+    ESP_LOGI(TAG, "Erase flash sector finished in %d", to_ms(tv) - to_ms(tvold));
 
     // read ADC
     int adc_raw, voltage;
     bool voltage_high = false;
-    int flash_addr = 0;
+    int flash_addr = partition->address;
+    static int buf[SPI_FLASH_SEC_SIZE / sizeof(int)];
     while (1) {
         if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
-            ESP_LOGV(TAG, "ADC read raw data: %d", adc_raw);
+            ESP_LOGI(TAG, "ADC read raw data: %d", adc_raw);
             ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage));
-            ESP_LOGV(TAG, "ADC read Cali Voltage: %d mV", voltage);
-            if (voltage_high ^ (voltage > VOLTAGE_THRESHOLD)) {
+            ESP_LOGI(TAG, "ADC read Cali Voltage: %d mV", voltage);
+            if (voltage_high ^ (voltage < VOLTAGE_THRESHOLD)) {
                 voltage_high = !voltage_high;
+                gettimeofday(&tvold, NULL);
+                ESP_LOGI(TAG, "Voltage %s at %d", voltage_high ? "HIGH" : "LOW", to_ms(tvold));
+                int time_ms = to_ms(tvold);
+                ESP_ERROR_CHECK(esp_partition_write(partition, flash_addr - partition->address, &time_ms, sizeof(time_ms)));
                 gettimeofday(&tv, NULL);
-                ESP_LOGD(TAG, "Voltage %s at %lld", voltage_high ? "high" : "low", tv.tv_sec);
-                ESP_ERROR_CHECK(esp_partition_write(partition, 0, &tv.tv_sec, sizeof(int)));
+                ESP_LOGI(TAG, "Wrote to flash in %d", to_ms(tv) - to_ms(tvold));
+                flash_addr += sizeof(time_ms);
+            }
+            if (flash_addr > partition->address) {
+                ESP_ERROR_CHECK(esp_partition_read(partition, 0, buf, flash_addr - partition->address));
+                gettimeofday(&tvold, NULL);
+                for (int i = 0; i < (flash_addr - partition->address) / sizeof(int); i++) {
+                    ESP_LOGI(TAG, "Flash content: %d", buf[i]);
+                }
                 gettimeofday(&tv, NULL);
-                ESP_LOGD(TAG, "Wrote %lld to flash", tv.tv_sec);
-                flash_addr += sizeof(int);
+                ESP_LOGI(TAG, "Read from flash in %d", to_ms(tv) - to_ms(tvold));
             }
         } else {
             ESP_LOGW(TAG, "ADC read failed");
