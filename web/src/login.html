@@ -27,7 +27,7 @@
                         },
                         body: JSON.stringify({ apiKey: apiKey }),
                     });
-                    const { authenticated } = res.json();
+                    const { authenticated } = await res.json();
                     if (authenticated) {
                         alert('authenticated');
                         window.location.href = '';
