@@ -3,7 +3,7 @@
 cd /var/www/EnergyMonitor
 git pull origin main --ff-only
 
-cd /web
+cd web
 pnpm i
 npx vite build
 
