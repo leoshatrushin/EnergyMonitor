@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import Chart from './Chart';
+import { config } from 'dotenv';
+config();
 
 const App = () => {
     return (

@@ -11,7 +11,7 @@ interface BarChartProps {
 
 function BarChart({ data }: BarChartProps) {
     useEffect(function initSSE() {
-        const sse = new EventSource(`http://localhost:4002/stream`);
+        const sse = new EventSource(`http://${process.env.HOST}:4000/stream`);
         sse.onmessage = function onmessage(e) {
             const timestamp = parseInt(e.data);
             console.log(timestamp);
