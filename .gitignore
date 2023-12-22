@@ -3,6 +3,8 @@
 
 node_modules/
 
+backend/.env
+
 esp/build/
 esp/.cache/
 esp/env.h
