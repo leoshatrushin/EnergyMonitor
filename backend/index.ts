@@ -27,7 +27,7 @@ async function initializeState() {
     //     prevMinute = await readInt(timestampFd.fd, timestampFileoffset - TIMESTAMP_SIZE) % (60 * 1000);
     // }
     // timestampStream = fs.createWriteStream('timestamps', { flags: 'a' });
-    minuteFd = await fs.promises.open('minutes', 'r');
+    minuteFd = await fs.promises.open('minutes.bin', 'r');
     const minuteStat = await minuteFd.stat();
     prevMinute = firstMinute + (minuteStat.size / 4 - 1) * 60 * 1000;
     // if (minuteStat.size > 0) {
@@ -37,7 +37,7 @@ async function initializeState() {
     //         console.log(err);
     //     }
     // }
-    minutesWriteStream = fs.createWriteStream('minutes', { flags: 'a' });
+    minutesWriteStream = fs.createWriteStream('minutes.bin', { flags: 'a' });
 }
 firstMinute = 1672531200000;
 
