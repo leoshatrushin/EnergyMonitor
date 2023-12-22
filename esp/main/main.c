@@ -7,6 +7,7 @@
 #include "esp_wifi.h"
 #include "esp_adc/adc_oneshot.h"
 #include "spi_flash_mmap.h"
+#include "string.h"
 #include <sys/time.h>
 
 #define TAG "main"
@@ -15,15 +16,27 @@
 #define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
 #define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
 #define ADC_READ_INTERVAL_MS 1000
-#define FLASH_SECTOR_SIZE 65536
 #define VOLTAGE_THRESHOLD 1800
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
 esp_event_loop_handle_t wifi_connect_event_loop_handle;
 
+const int buffer_1[FLASH_SECTOR_SIZE / sizeof(int)];
+const int buffer_2[FLASH_SECTOR_SIZE / sizeof(int)];
+const int buffer_3[FLASH_SECTOR_SIZE / sizeof(int)];
+volatile int partition_offset = 0;
+
 int to_ms(struct timeval tv) {
     return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+int *swap_map_ptr(int *map_ptr) {
+    if (map_ptr == buffer_1) {
+        return (int *) buffer_2;
+    } else {
+        return (int *) buffer_1;
+    }
 }
 
 void app_main(void) {
@@ -86,8 +99,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "wifi init finished");
 
-    // create socket task
-    xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);
+    // find the partition map in the partition table
+    const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
+    assert(partition != NULL);
 
     // init ADC
     adc_oneshot_unit_handle_t adc1_handle;
@@ -114,51 +128,47 @@ void app_main(void) {
     ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle));
     ESP_LOGI(TAG, "ADC init finished");
 
-    // find the partition map in the partition table
-    const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
-    ESP_LOGI(TAG, "partition searched for");
-    assert(partition != NULL);
-    ESP_LOGI(TAG, "partition found");
+    // initialize flash sectors
+    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, FLASH_SECTOR_SIZE * 2));
+    esp_partition_mmap_handle_t map_handle_1, map_handle_2;
+    int *curr_map_ptr = (int *) buffer_1;
+    ESP_ERROR_CHECK(esp_partition_mmap(partition, 0, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_1, &map_handle_1));
+    ESP_ERROR_CHECK(esp_partition_mmap(partition, FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_2, &map_handle_2));
 
-    // initialize flash sector
-    struct timeval tv, tvold;
-    gettimeofday(&tvold, NULL);
-    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, FLASH_SECTOR_SIZE));
-    gettimeofday(&tv, NULL);
-    ESP_LOGI(TAG, "Erase flash sector finished in %d", to_ms(tv) - to_ms(tvold));
+    // create socket task
+    xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);
 
     // read ADC
     int adc_raw, voltage;
     bool voltage_high = false;
-    int flash_addr = partition->address;
-    static int buf[SPI_FLASH_SEC_SIZE / sizeof(int)];
+    struct timeval tv, read_start;
+    int time_ms;
     while (1) {
+        gettimeofday(&read_start, NULL);
         if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
-            ESP_LOGI(TAG, "ADC read raw data: %d", adc_raw);
+            ESP_LOGD(TAG, "ADC read raw data: %d", adc_raw);
             ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage));
-            ESP_LOGI(TAG, "ADC read Cali Voltage: %d mV", voltage);
+            ESP_LOGD(TAG, "ADC read Cali Voltage: %d mV", voltage);
             if (voltage_high ^ (voltage < VOLTAGE_THRESHOLD)) {
                 voltage_high = !voltage_high;
-                gettimeofday(&tvold, NULL);
-                ESP_LOGI(TAG, "Voltage %s at %d", voltage_high ? "HIGH" : "LOW", to_ms(tvold));
-                int time_ms = to_ms(tvold);
-                ESP_ERROR_CHECK(esp_partition_write(partition, flash_addr - partition->address, &time_ms, sizeof(time_ms)));
                 gettimeofday(&tv, NULL);
-                ESP_LOGI(TAG, "Wrote to flash in %d", to_ms(tv) - to_ms(tvold));
-                flash_addr += sizeof(time_ms);
-            }
-            if (flash_addr > partition->address) {
-                ESP_ERROR_CHECK(esp_partition_read(partition, 0, buf, flash_addr - partition->address));
-                gettimeofday(&tvold, NULL);
-                for (int i = 0; i < (flash_addr - partition->address) / sizeof(int); i++) {
-                    ESP_LOGI(TAG, "Flash content: %d", buf[i]);
-                }
-                gettimeofday(&tv, NULL);
-                ESP_LOGI(TAG, "Read from flash in %d", to_ms(tv) - to_ms(tvold));
+                time_ms = to_ms(tv);
+                ESP_LOGI(TAG, "Voltage %s at %d", voltage_high ? "HIGH" : "LOW", time_ms);
+                memcpy(curr_map_ptr, &time_ms, sizeof(time_ms));
+                partition_offset += sizeof(time_ms);
+                if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr);
+                if (partition_offset == partition->size) partition_offset = 0;
             }
         } else {
             ESP_LOGW(TAG, "ADC read failed");
         }
-        vTaskDelay(pdMS_TO_TICKS(ADC_READ_INTERVAL_MS));
+        gettimeofday(&tv, NULL);
+        int dt = to_ms(tv) - to_ms(read_start);
+        if (dt > ADC_READ_INTERVAL_MS) {
+            ESP_LOGW(TAG, "ADC read took too long: %d ms", dt);
+        } else {
+            ESP_LOGD(TAG, "ADC read took %d ms", dt);
+            vTaskDelay(pdMS_TO_TICKS(ADC_READ_INTERVAL_MS - dt));
+        }
     }
 }
