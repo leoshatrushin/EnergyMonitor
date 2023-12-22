@@ -28,13 +28,12 @@
                         body: JSON.stringify({ apiKey: apiKey }),
                     });
                     const { authenticated } = res.json();
-                    alert('hi');
-                    //                    if (authenticated) {
-                    //                        alert('authenticated');
-                    //                        window.location.href = '';
-                    //                    } else {
-                    //                        alert('Incorrect password');
-                    //                    }
+                    if (authenticated) {
+                        alert('authenticated');
+                        window.location.href = '';
+                    } else {
+                        alert('Incorrect password');
+                    }
                 } catch (error) {
                     console.error(error);
                     alert('Something went wrong');
