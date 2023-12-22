@@ -1,49 +1,20 @@
-import { area } from 'd3-shape';
+import BarChart from './BarChart';
 
-var data = [
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-    [0, 10],
-    [1, 15],
-    [2, 35],
-    [3, 20],
-];
+const barData = [
+    {time: 0, value: 10},
+    {time: 1, value: 20},
+    {time: 2, value: 30},
+    {time: 3, value: 40},
+    {time: 4, value: 50},
+]
 
 const Chart = () => {
-    console.log(area()(data));
     return (
-        <div>
-            <h2>Chart</h2>
-            <svg width="400" height="400">
-                <path d={area()(data)} />
+        <>
+            <svg id="chartData" width="400" height="400">
+                <BarChart data={barData}/>
             </svg>
-        </div>
+        </>
     );
 };
 
