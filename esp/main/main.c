@@ -148,14 +148,14 @@ void app_main(void) {
     ESP_LOGI(TAG, "ADC init finished");
 
     // initialize flash sectors
-    ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, FLASH_SECTOR_SIZE * 2));
+    /* ESP_ERROR_CHECK(esp_partition_erase_range(partition, 0, FLASH_SECTOR_SIZE * 2)); */
     esp_partition_mmap_handle_t map_handle_1, map_handle_2;
     int *curr_map_ptr = (int *) buffer_1;
-    ESP_ERROR_CHECK(esp_partition_mmap(partition, 0, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_1, &map_handle_1));
-    ESP_ERROR_CHECK(esp_partition_mmap(partition, FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_2, &map_handle_2));
+    /* ESP_ERROR_CHECK(esp_partition_mmap(partition, 0, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_1, &map_handle_1)); */
+    /* ESP_ERROR_CHECK(esp_partition_mmap(partition, FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE, ESP_PARTITION_MMAP_DATA, (const void **) buffer_2, &map_handle_2)); */
 
     // create socket task
-    xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle);
+    /* xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle); */
 
     // read ADC
     int adc_raw, voltage;
@@ -168,9 +168,13 @@ void app_main(void) {
     esp_tls_cfg_t tls_cfg = {
         .cacert_buf = (const unsigned char *) server_root_cert_pem_start,
         .cacert_bytes = server_root_cert_pem_end - server_root_cert_pem_start,
-        .tls_version = ESP_TLS_VER_TLS_1_3,
+        /* .tls_version = ESP_TLS_VER_TLS_1_3, */
     };
+    ESP_LOGI(TAG, "Connecting to %s:%d", SERVER_HOSTNAME, SERVER_PORT);
     esp_tls_conn_new_sync(SERVER_HOSTNAME, strlen(SERVER_HOSTNAME), SERVER_PORT, &tls_cfg, tls);
+    ESP_LOGI(TAG, "Connected to %s:%d", SERVER_HOSTNAME, SERVER_PORT);
+    Esp_tls_conn_write(tls, API_KEY, strlen(API_KEY));
+    ESP_LOGI(TAG, "Sent API key");
     while (1) {
         gettimeofday(&read_start, NULL);
         if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
