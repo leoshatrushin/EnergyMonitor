@@ -4,6 +4,8 @@
 node_modules/
 
 backend/.env
+backend/minutes.bin
+backend/gen_fake_data
 
 esp/build/
 esp/.cache/
