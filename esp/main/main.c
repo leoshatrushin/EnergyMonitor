@@ -1,6 +1,7 @@
 #include "main.h"
 #include "wifi.h"
 #include "socket_task.h"
+#include "utils.h"
 #include "../env.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -9,6 +10,11 @@
 #include "spi_flash_mmap.h"
 #include "string.h"
 #include <sys/time.h>
+#include "netdb.h"
+#include "esp_tls.h"
+
+extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
+extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
 
 #define TAG "main"
 #define ADC_UNIT ADC_UNIT_1 // SAR ADC 1
@@ -26,6 +32,19 @@ const int buffer_1[FLASH_SECTOR_SIZE / sizeof(int)];
 const int buffer_2[FLASH_SECTOR_SIZE / sizeof(int)];
 const int buffer_3[FLASH_SECTOR_SIZE / sizeof(int)];
 volatile int partition_offset = 0;
+
+int Esp_tls_conn_write(esp_tls_t *tls, const void *data, int len) {
+    int written_bytes = 0;
+    while (written_bytes < len) {
+        int bytes_written = esp_tls_conn_write(tls, data + written_bytes, len - written_bytes);
+        if (bytes_written < 0 && bytes_written != ESP_TLS_ERR_SSL_WANT_READ && bytes_written != ESP_TLS_ERR_SSL_WANT_WRITE) {
+            ESP_LOGW(TAG, "esp_tls_conn_write failed: errno %d", errno);
+            return -1;
+        }
+        written_bytes += bytes_written;
+    }
+    return written_bytes;
+}
 
 int to_ms(struct timeval tv) {
     return tv.tv_sec * 1000 + tv.tv_usec / 1000;
@@ -143,6 +162,15 @@ void app_main(void) {
     bool voltage_high = false;
     struct timeval tv, read_start;
     int time_ms;
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+    esp_tls_t *tls = esp_tls_init();
+    NULL_CHECK(tls);
+    esp_tls_cfg_t tls_cfg = {
+        .cacert_buf = (const unsigned char *) server_root_cert_pem_start,
+        .cacert_bytes = server_root_cert_pem_end - server_root_cert_pem_start,
+        .tls_version = ESP_TLS_VER_TLS_1_3,
+    };
+    esp_tls_conn_new_sync(SERVER_HOSTNAME, strlen(SERVER_HOSTNAME), SERVER_PORT, &tls_cfg, tls);
     while (1) {
         gettimeofday(&read_start, NULL);
         if (adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw) == ESP_OK) {
@@ -154,10 +182,11 @@ void app_main(void) {
                 gettimeofday(&tv, NULL);
                 time_ms = to_ms(tv);
                 ESP_LOGI(TAG, "Voltage %s at %d", voltage_high ? "HIGH" : "LOW", time_ms);
-                memcpy(curr_map_ptr, &time_ms, sizeof(time_ms));
-                partition_offset += sizeof(time_ms);
-                if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr);
-                if (partition_offset == partition->size) partition_offset = 0;
+                /* memcpy(curr_map_ptr, &time_ms, sizeof(time_ms)); */
+                /* partition_offset += sizeof(time_ms); */
+                /* if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr); */
+                /* if (partition_offset == partition->size) partition_offset = 0; */
+                Esp_tls_conn_write(tls, &time_ms, sizeof(time_ms));
             }
         } else {
             ESP_LOGW(TAG, "ADC read failed");
