@@ -11,5 +11,7 @@ export default defineConfig({
                 login: 'src/login.html',
             },
         },
+        minify: false,
+        sourcemap: true,
     },
 });
