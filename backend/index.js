@@ -2,19 +2,16 @@ import { config } from 'dotenv';
 import net from 'net';
 import http from 'http';
 import fs from 'fs';
-
 config();
 const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 const WEB_ROOT_PATH = process.env.WEB_ROOT_PATH;
-
 const TIMESTAMP_SIZE = 4;
-
 let sensorAuthenticated = false;
-let stateInitialized: Promise<void>;
-let timestampStream: fs.WriteStream, minuteStream: fs.WriteStream;
-let timestampFileoffset: number;
-let prevMinute: number = 0;
+let stateInitialized;
+let timestampStream, minuteStream;
+let timestampFileoffset;
+let prevMinute = 0;
 async function initializeState() {
     const timestampFd = await fs.promises.open('timestamps', 'r');
     const stat = await timestampFd.stat();
@@ -27,20 +24,19 @@ async function initializeState() {
     timestampStream = fs.createWriteStream('timestamps', { flags: 'a' });
     minuteStream = fs.createWriteStream('minutes', { flags: 'a' });
 }
-
 const tcpServer = net.createServer(socket => {
-    socket.on('data', async data => {
+    socket.on('data', async (data) => {
         if (!sensorAuthenticated) {
             const apiKey = data.toString();
             if (apiKey === SENSOR_API_KEY) {
                 sensorAuthenticated = true;
                 stateInitialized = initializeState();
-            } else {
+            }
+            else {
                 socket.destroy();
             }
             return;
         }
-
         await stateInitialized;
         timestampStream.write(data);
         const timestamp = data.readUInt32LE(0);
@@ -53,28 +49,26 @@ const tcpServer = net.createServer(socket => {
         timestampFileoffset += TIMESTAMP_SIZE;
     });
 });
-
 tcpServer.listen(4001);
-
 const httpServer = http.createServer((req, res) => {
     if (req.method === 'GET') {
         const cookies = parseCookies(req);
         if (cookies && cookies.apiKey === CLIENT_API_KEY) {
             console.log('serving client page');
             serveClientPage(res);
-        } else {
+        }
+        else {
             console.log('serving auth page');
             serveAuthPage(res);
         }
-    } else if (req.method === 'POST') {
+    }
+    else if (req.method === 'POST') {
         handleAPIKeySubmission(req, res);
     }
 });
-
 httpServer.listen(4002);
-
-function parseCookies(req: http.IncomingMessage) {
-    const cookies: { [key: string]: string } = {};
+function parseCookies(req) {
+    const cookies = {};
     const cookieHeader = req.headers.cookie;
     cookieHeader &&
         cookieHeader.split(';').forEach(function addCookie(cookie) {
@@ -83,8 +77,7 @@ function parseCookies(req: http.IncomingMessage) {
         });
     return cookies;
 }
-
-function handleAPIKeySubmission(req: http.IncomingMessage, res: http.ServerResponse) {
+function handleAPIKeySubmission(req, res) {
     let body = '';
     req.on('data', chunk => {
         body += chunk.toString();
@@ -96,22 +89,21 @@ function handleAPIKeySubmission(req: http.IncomingMessage, res: http.ServerRespo
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Set-Cookie', `apiKey=${apiKey}; HttpOnly`);
             res.end(JSON.stringify({ authenticated: true }));
-        } else {
+        }
+        else {
             res.setHeader('Content-Type', 'application/json');
             res.writeHead(401, { Location: '/' });
             res.end(JSON.stringify({ authenticated: false }));
         }
     });
 }
-
-async function serveAuthPage(res: http.ServerResponse) {
+async function serveAuthPage(res) {
     const html = await fs.promises.readFile(WEB_ROOT_PATH + '/login.html');
     res.setHeader('Content-Type', 'text/html');
     res.writeHead(200);
     res.end(html);
 }
-
-async function serveClientPage(res: http.ServerResponse) {
+async function serveClientPage(res) {
     const html = await fs.promises.readFile(WEB_ROOT_PATH + '/index.html');
     res.setHeader('Content-Type', 'text/html');
     res.writeHead(200);

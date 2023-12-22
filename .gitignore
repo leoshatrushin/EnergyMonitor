@@ -10,5 +10,5 @@ esp/.cache/
 esp/env.h
 esp/sdkconfig.old
 
-web/dist/
+web/src/dist
 web/.env
