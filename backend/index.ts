@@ -59,9 +59,12 @@ tcpServer.listen(4001);
 const httpServer = http.createServer((req, res) => {
     if (req.method === 'GET') {
         const cookies = parseCookies(req);
+        console.log(cookies);
         if (cookies && cookies.apiKey === CLIENT_API_KEY) {
+            console.log('serving client page');
             serveClientPage(res);
         } else {
+            console.log('serving auth page');
             serveAuthPage(res);
         }
     } else if (req.method === 'POST') {
@@ -88,6 +91,7 @@ function handleAPIKeySubmission(req: http.IncomingMessage, res: http.ServerRespo
         body += chunk.toString();
     });
     req.on('end', async () => {
+        console.log('post body: ', body);
         const { apiKey } = JSON.parse(body);
         if (apiKey === CLIENT_API_KEY) {
             res.setHeader('Content-Type', 'application/json');
