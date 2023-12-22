@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import net from 'net';
 import http from 'http';
 import fs from 'fs';
+import express from 'express';
 
 config();
 const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
@@ -12,20 +13,45 @@ const TIMESTAMP_SIZE = 4;
 
 let sensorAuthenticated = false;
 let stateInitialized: Promise<void>;
-let timestampStream: fs.WriteStream, minuteStream: fs.WriteStream;
+let timestampStream: fs.WriteStream, minutesWriteStream: fs.WriteStream;
 let timestampFileoffset: number;
-let prevMinute: number = 0;
+let firstMinute,
+    prevMinute: number = 0;
+let minuteFd: fs.promises.FileHandle;
+let streamRes: http.ServerResponse;
 async function initializeState() {
-    const timestampFd = await fs.promises.open('timestamps', 'r');
-    const stat = await timestampFd.stat();
-    timestampFileoffset = stat.size;
-    if (timestampFileoffset > TIMESTAMP_SIZE) {
-        const buffer = Buffer.alloc(TIMESTAMP_SIZE);
-        await timestampFd.read(buffer, 0, TIMESTAMP_SIZE, timestampFileoffset - TIMESTAMP_SIZE);
-        prevMinute = buffer.readUInt32LE(0) % (60 * 1000);
-    }
-    timestampStream = fs.createWriteStream('timestamps', { flags: 'a' });
-    minuteStream = fs.createWriteStream('minutes', { flags: 'a' });
+    // const timestampFd = await fs.promises.open('timestamps', 'r');
+    // const stat = await timestampFd.stat();
+    // timestampFileoffset = stat.size;
+    // try {
+    //     prevMinute = await readInt(timestampFd.fd, timestampFileoffset - TIMESTAMP_SIZE) % (60 * 1000);
+    // }
+    // timestampStream = fs.createWriteStream('timestamps', { flags: 'a' });
+    minuteFd = await fs.promises.open('minutes', 'r');
+    const minuteStat = await minuteFd.stat();
+    prevMinute = firstMinute + (minuteStat.size / 4 - 1) * 60 * 1000;
+    // if (minuteStat.size > 0) {
+    //     try {
+    //         firstMinute = await readInt(minuteFd.fd, 0);
+    //     } catch (err) {
+    //         console.log(err);
+    //     }
+    // }
+    minutesWriteStream = fs.createWriteStream('minutes', { flags: 'a' });
+}
+firstMinute = 1672531200000;
+
+function readInt(fd: number, offset: number): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const buffer = Buffer.alloc(4);
+        fs.read(fd, buffer, 0, 4, offset, (err, bytesRead, buffer) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(buffer.readUInt32LE(0));
+            }
+        });
+    });
 }
 
 const tcpServer = net.createServer(socket => {
@@ -42,36 +68,60 @@ const tcpServer = net.createServer(socket => {
         }
 
         await stateInitialized;
-        timestampStream.write(data);
+        // timestampStream.write(data);
         const timestamp = data.readUInt32LE(0);
-        const minutesDiff = (timestamp % (60 * 1000)) - prevMinute;
+        const minutesDiff = (timestamp - prevMinute) % (60 * 1000);
         const buffer = Buffer.alloc(4);
         buffer.writeUInt32LE(timestampFileoffset);
         for (let i = 0; i < minutesDiff; i++) {
-            minuteStream.write(buffer);
+            minutesWriteStream.write(buffer);
         }
         timestampFileoffset += TIMESTAMP_SIZE;
+
+        if (streamRes) {
+            streamRes.write(`data: ${timestamp.toString()}\n\n`);
+        }
     });
 });
 
 tcpServer.listen(4001);
 
-const httpServer = http.createServer((req, res) => {
-    if (req.method === 'GET') {
-        const cookies = parseCookies(req);
-        if (cookies && cookies.apiKey === CLIENT_API_KEY) {
-            console.log('serving client page');
-            serveClientPage(res);
-        } else {
-            console.log('serving auth page');
-            serveAuthPage(res);
-        }
-    } else if (req.method === 'POST') {
-        handleAPIKeySubmission(req, res);
+function roundDownToMinute(timestamp: number) {
+    return timestamp - (timestamp % (60 * 1000));
+}
+
+const app = express();
+
+app.use(function authenticate(req, res, next) {
+    const cookies = parseCookies(req);
+    if (cookies && cookies.apiKey === CLIENT_API_KEY) {
+        next();
+    } else {
+        res.sendFile(WEB_ROOT_PATH + '/login.html');
     }
 });
 
-httpServer.listen(4002);
+app.post('/', (req, res) => {
+    handleAPIKeySubmission(req, res);
+});
+
+app.get('/data', (req, res) => {
+    res.type('application/octet-stream');
+    const start = ((roundDownToMinute(parseInt(req.query.s as string)) - firstMinute) / 60 / 1000) * 4;
+    const end = ((roundDownToMinute(parseInt(req.query.e as string)) - firstMinute) / 60 / 1000) * 4 - 1;
+    const minutesReadStream = fs.createReadStream('./minutes.bin', { start, end });
+    console.log(start, end);
+    minutesReadStream.pipe(res);
+});
+
+app.get('/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    streamRes = res;
+});
+
+app.use(express.static(WEB_ROOT_PATH));
+
+app.listen(4002);
 
 function parseCookies(req: http.IncomingMessage) {
     const cookies: { [key: string]: string } = {};
@@ -102,18 +152,4 @@ function handleAPIKeySubmission(req: http.IncomingMessage, res: http.ServerRespo
             res.end(JSON.stringify({ authenticated: false }));
         }
     });
-}
-
-async function serveAuthPage(res: http.ServerResponse) {
-    const html = await fs.promises.readFile(WEB_ROOT_PATH + '/login.html');
-    res.setHeader('Content-Type', 'text/html');
-    res.writeHead(200);
-    res.end(html);
-}
-
-async function serveClientPage(res: http.ServerResponse) {
-    const html = await fs.promises.readFile(WEB_ROOT_PATH + '/index.html');
-    res.setHeader('Content-Type', 'text/html');
-    res.writeHead(200);
-    res.end(html);
 }
