@@ -17,7 +17,7 @@
         </form>
     </div>
     <script>
-        document.getElementById('apiKeyForm').addEventListener('submit', function submitAPIKey(event) {
+        document.getElementById('apiKeyForm').addEventListener('submit', async function submitAPIKey(event) {
             event.preventDefault();
             const apiKey = document.getElementById('apiKey').value;
             try {
@@ -30,7 +30,7 @@
                 });
                 const {authenticated} = res.json();
                 if (authenticated) {
-                    window.location.href = ''
+                    window.location.href = '';
                 } else {
                     alert('Incorrect password');
                 }
