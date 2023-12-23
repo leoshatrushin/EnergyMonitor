@@ -3,7 +3,6 @@
         "target": "ESNext",
         "module": "ESNext",
         "lib": ["ESNext"],
-        "types": ["node"],
         "moduleResolution": "node",
         "esModuleInterop": true,
     }
