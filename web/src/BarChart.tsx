@@ -11,7 +11,9 @@ interface BarChartProps {
 
 function BarChart({ data }: BarChartProps) {
     useEffect(function initSSE() {
-        const sse = new EventSource(`https://${import.meta.env.VITE_HOST}:${import.meta.env.VITE_HOST_PORT}/stream`);
+        const sse = new EventSource(
+            `${import.meta.env.VITE_PROTOCOL}://${import.meta.env.VITE_HOST}:${import.meta.env.VITE_HOST_PORT}/stream`,
+        );
         sse.onmessage = function onmessage(e) {
             const timestamp = parseInt(e.data);
             console.log(timestamp);

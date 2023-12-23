@@ -18,7 +18,9 @@ const times = [
 
 async function getBarData(start: number, end: number) {
     const res = await fetch(
-        `https://${import.meta.env.VITE_HOST}:${import.meta.env.VITE_HOST_PORT}/data?s=${start}&e=${end}`,
+        `${import.meta.env.VITE_PROTOCOL}://${import.meta.env.VITE_HOST}:${
+            import.meta.env.VITE_HOST_PORT
+        }/data?s=${start}&e=${end}`,
     );
     const bin = await res.arrayBuffer();
     const dataView = new DataView(bin);
