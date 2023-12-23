@@ -84,10 +84,7 @@ const tcpServer = net.createServer(socket => {
         }
         timestampFileoffset += TIMESTAMP_SIZE;
 
-        console.log(timestamp);
         if (streamRes) {
-            console.log('streamRes exists');
-            streamRes.write('data: 6\n\n');
             streamRes.write(`data: ${timestamp.toString()}\n\n`);
         }
     });
@@ -130,7 +127,6 @@ app.get('/stream', (req, res) => {
         Connection: 'keep-alive',
     });
     streamRes = res;
-    streamRes.write('data: 5\n\n');
 });
 
 app.use(express.static(WEB_ROOT_PATH));

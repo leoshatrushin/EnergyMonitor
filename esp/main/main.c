@@ -13,8 +13,8 @@
 #include "netdb.h"
 #include "esp_tls.h"
 
-extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
-extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
+extern const uint8_t server_root_cert_pem_start[] asm(CERT_START);
+extern const uint8_t server_root_cert_pem_end[]   asm(CERT_END);
 
 #define TAG "main"
 #define ADC_UNIT ADC_UNIT_1 // SAR ADC 1
@@ -168,6 +168,7 @@ void app_main(void) {
     esp_tls_cfg_t tls_cfg = {
         .cacert_buf = (const unsigned char *) server_root_cert_pem_start,
         .cacert_bytes = server_root_cert_pem_end - server_root_cert_pem_start,
+        .skip_common_name = CFG_SKIP_COMMON_NAME,
         /* .tls_version = ESP_TLS_VER_TLS_1_3, */
     };
     ESP_LOGI(TAG, "Connecting to %s:%d", SERVER_HOSTNAME, SERVER_PORT);
