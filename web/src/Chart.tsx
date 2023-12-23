@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import BarChart from './BarChart';
 import styles from './styles/Chart.module.css';
 
@@ -17,7 +17,7 @@ const times = [
 ];
 
 async function getBarData(start: number, end: number) {
-    const res = await fetch(`http://${process.env.HOST}:4000/data?s=${start}&e=${end}`);
+    const res = await fetch(`http://${import.meta.env.VITE_HOST}/data?s=${start}&e=${end}`);
     const bin = await res.arrayBuffer();
     const dataView = new DataView(bin);
     let barData = [];
