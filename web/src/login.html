@@ -1,43 +1,44 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-        <link rel="stylesheet" href="./style.css" />
-        <title>EnergyMonitor</title>
-    </head>
 
-    <body>
-        <div id="auth-form" style="display: block">
-            <form id="apiKeyForm">
-                <input type="text" id="apiKey" name="apiKey" placeholder="Enter password" />
-                <button type="submit">Submit</button>
-            </form>
-        </div>
-        <script>
-            document.getElementById('apiKeyForm').addEventListener('submit', async function submitAPIKey(event) {
-                event.preventDefault();
-                const apiKey = document.getElementById('apiKey').value;
-                try {
-                    const res = await fetch('/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ apiKey: apiKey }),
-                    });
-                    const { authenticated } = await res.json();
-                    if (!authenticated) {
-                        alert('Incorrect password');
-                    } else {
-                        window.location.href = '';
-                    }
-                } catch (error) {
-                    console.error(error);
-                    alert('Something went wrong');
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>EnergyMonitor</title>
+</head>
+
+<body>
+    <div id="auth-form" style="display: block">
+        <form id="apiKeyForm">
+            <input type="text" id="apiKey" name="apiKey" placeholder="Enter password" />
+            <button type="submit">Submit</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('apiKeyForm').addEventListener('submit', async function submitAPIKey(event) {
+            event.preventDefault();
+            const apiKey = document.getElementById('apiKey').value;
+            try {
+                const res = await fetch('/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({apiKey: apiKey}),
+                });
+                const {authenticated} = await res.json();
+                if (!authenticated) {
+                    alert('Incorrect password');
+                } else {
+                    window.location.href = '';
                 }
-            });
-        </script>
-    </body>
+            } catch (error) {
+                console.error(error);
+                alert('Something went wrong');
+            }
+        });
+    </script>
+</body>
+
 </html>
