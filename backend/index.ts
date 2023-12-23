@@ -79,6 +79,7 @@ const tcpServer = net.createServer(socket => {
         timestampFileoffset += TIMESTAMP_SIZE;
 
         if (streamRes) {
+            streamRes.write('data: 6\n\n');
             streamRes.write(`data: ${timestamp.toString()}\n\n`);
         }
     });
@@ -115,7 +116,11 @@ app.get('/data', (req, res) => {
 });
 
 app.get('/stream', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+    });
     streamRes = res;
 });
 
