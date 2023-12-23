@@ -5,8 +5,8 @@ git pull origin main --ff-only
 
 cd web
 pnpm i
-npx vite build
+npm run prod
 
 cd ../backend
 pnpm i
-npx tsc
+npm run prod
