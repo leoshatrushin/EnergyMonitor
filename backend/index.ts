@@ -78,7 +78,9 @@ const tcpServer = net.createServer(socket => {
         }
         timestampFileoffset += TIMESTAMP_SIZE;
 
+        console.log(timestamp);
         if (streamRes) {
+            console.log('streamRes exists');
             streamRes.write('data: 6\n\n');
             streamRes.write(`data: ${timestamp.toString()}\n\n`);
         }
