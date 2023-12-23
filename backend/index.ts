@@ -55,16 +55,22 @@ function readInt(fd: number, offset: number): Promise<number> {
 }
 
 const tcpServer = net.createServer(socket => {
+    let apiKey = '';
     socket.on('data', async data => {
         if (!sensorAuthenticated) {
-            const apiKey = data.toString();
+            const toRead = Math.min(data.length, SENSOR_API_KEY.length - apiKey.length);
+            apiKey += data.toString().slice(0, toRead);
+            data = data.subarray(toRead);
+            console.log(apiKey);
+            if (apiKey.length < SENSOR_API_KEY.length) return;
             if (apiKey === SENSOR_API_KEY) {
                 sensorAuthenticated = true;
+                console.log('sensor authenticated');
                 stateInitialized = initializeState();
             } else {
                 socket.destroy();
             }
-            return;
+            if (data.length === 0) return;
         }
 
         await stateInitialized;
@@ -124,6 +130,7 @@ app.get('/stream', (req, res) => {
         Connection: 'keep-alive',
     });
     streamRes = res;
+    streamRes.write('data: 5\n\n');
 });
 
 app.use(express.static(WEB_ROOT_PATH));
