@@ -40,6 +40,7 @@ const Chart = () => {
     const [start, setStart] = useState(now - times[times.length - 1].value);
     const [end, setEnd] = useState(now);
     useEffect(() => {
+        console.log('host: ', import.meta.env.VITE_HOST);
         (async () => {
             const barData = await getBarData(start, end);
             setBarData(barData);
