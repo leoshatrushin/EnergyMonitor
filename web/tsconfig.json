@@ -1,6 +1,5 @@
 {
     "compilerOptions": {
-        "jsx": "react-jsx",
         "module": "ESNext",
         "target": "ESNext",
         "types": ["vite/client"],
