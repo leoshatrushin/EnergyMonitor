@@ -1,7 +1,8 @@
 import { getData, getStream } from '../services/API';
 import { select } from 'd3-selection';
-import { scaleBand, scaleLinear } from 'd3-scale';
+import { scaleBand, scaleLinear, scaleTime } from 'd3-scale';
 import { max } from 'd3-array';
+import { axisBottom, axisLeft } from 'd3-axis';
 
 type Bar = { time: number; value: number };
 
@@ -10,7 +11,7 @@ function roundDownToMinute(timestamp: number) {
 }
 
 function numBars(start: number, end: number, interval: number) {
-    return Math.floor((end - start) / interval);
+    return Math.floor((end - start) / interval) + 1;
 }
 
 function convertBinToBars(bin: ArrayBuffer, start: number, end: number): Bar[] {
@@ -32,39 +33,66 @@ function convertBinToBars(bin: ArrayBuffer, start: number, end: number): Bar[] {
 }
 
 const now = roundDownToMinute(Date.now());
-let start = now - 15 * 60 * 1000;
+let start = now - 14 * 60 * 1000;
 let end = now;
 const minutesBin = await getData(start, end);
 const bars = convertBinToBars(minutesBin, start, end);
+const svgElement = document.getElementById('chartData');
+let svWidth = svgElement.getAttribute('width');
+let svgHeight = svgElement.getAttribute('height');
 
 const svg = select('#chartData');
-const xScale = scaleBand().range([0, 400]).padding(0.1);
-const yScale = scaleLinear().range([0, 400]);
 
 function updateData(data: Bar[]) {
-    xScale.domain(bars.map((d: Bar) => String(d.time)));
+    const xTime = scaleTime().range([40, 440]);
+    const xBand = scaleBand().range([40, 440]).padding(0.1);
+    const yScale = scaleLinear().range([420, 20]);
+    xTime.domain([new Date(start), new Date(end + 60 * 1000)]);
+    xBand.domain(bars.map((d: Bar) => String(d.time)));
     yScale.domain([0, max(bars, (d: Bar) => d.value) ?? 0]);
     svg.selectAll('rect')
         .data(data)
         .join(
-            function(enter) {
+            function (enter) {
                 return enter
                     .append('rect')
-                    .attr('x', (d: Bar) => xScale(String(d.time)) ?? 0)
-                    .attr('y', (d: Bar) => 400 - yScale(d.value))
-                    .attr('height', (d: Bar) => yScale(d.value))
-                    .attr('width', xScale.bandwidth());
+                    .attr('x', (d: Bar) => xBand(String(d.time)) ?? 0)
+                    .attr('y', (d: Bar) => yScale(d.value))
+                    .attr('height', (d: Bar) => 420 - yScale(d.value))
+                    .attr('width', xBand.bandwidth())
+                    .attr('fill', 'cyan')
+                    .attr('opacity', '0.8')
+                    .attr('class', 'glow');
             },
-            function(update) {
+            function (update) {
                 return update
-                    .attr('x', (d: Bar) => xScale(String(d.time)) ?? 0)
-                    .attr('y', (d: Bar) => 400 - yScale(d.value))
-                    .attr('height', (d: Bar) => yScale(d.value));
+                    .attr('x', (d: Bar) => xBand(String(d.time)) ?? 0)
+                    .attr('y', (d: Bar) => yScale(d.value))
+                    .attr('height', (d: Bar) => 420 - yScale(d.value));
             },
-            function(exit) {
+            function (exit) {
                 return exit.remove();
             },
         );
+    svg.select('.x-axis').remove();
+    const xAxis = axisBottom(xTime)
+        .tickFormat((date: Date) => {
+            // Format hours and minutes with leading zeros if needed
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        })
+        .ticks(5)
+        .tickSizeOuter(0);
+    svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0,422)`).call(xAxis);
+    svg.select('.y-axis').remove();
+    const yAxis = axisLeft(yScale)
+        .ticks(5)
+        .tickFormat(d => {
+            return `${Number(d)}KW`;
+        })
+        .tickSizeOuter(0);
+    svg.append('g').attr('class', 'y-axis').attr('transform', `translate(40,2)`).call(yAxis);
 }
 
 updateData(bars);
@@ -75,12 +103,14 @@ sse.onmessage = function incorporateTimestamp(e: MessageEvent) {
     console.log(timestamp);
     const timestampMinute = roundDownToMinute(timestamp);
     if (timestamp - end < 60 * 1000) {
+        console.log('adding');
         bars[(timestampMinute - start) / 60 / 1000].value++;
     } else {
+        console.log('new minute');
         const minDiff = Math.floor((timestamp - end) / 60 / 1000);
         for (let i = 0; i < minDiff - 1; i++) {
             bars.shift();
-            bars.push({ time: timestampMinute - (minDiff - i) * 60 * 1000, value: 0.2 });
+            bars.push({ time: timestampMinute - (minDiff - i) * 60 * 1000, value: 0.3 });
         }
         bars.shift();
         bars.push({ time: timestampMinute, value: 1 });
