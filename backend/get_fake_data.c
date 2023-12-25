@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdint.h>
 
 /* #define START 1672531200000 // 1 Jan 2023 00:00:00 */
 /* #define START 1701302400000 // 1 Dec 2023 00:00:00 */
