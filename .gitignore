@@ -10,6 +10,7 @@ backend/gen_fake_data
 
 esp/build/
 esp/.cache/
+esp/.env
 esp/env*.h
 !esp/envexample.h
 esp/sdkconfig.old

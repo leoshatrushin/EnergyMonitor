@@ -1,0 +1,22 @@
+{
+  "name": "esp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx watch test-client.ts",
+    "prod": "command -v idf.py &>/dev/null || get_idf; idf.py -p /dev/cu.usbserial-0001 flash monitor"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "tsx": "^4.7.0"
+  }
+}
