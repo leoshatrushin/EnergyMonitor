@@ -9,82 +9,83 @@ const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 const WEB_ROOT_PATH = process.env.WEB_ROOT_PATH;
 
-const TIMESTAMP_SIZE = 4;
+const TIMESTAMP_SIZE = 8;
 
+const timestampFileHandle = await fs.promises.open('timestamps.bin', 'r');
+const timestampWriteStream = fs.createWriteStream('timestamps.bin', { flags: 'a' });
+let timestampFileoffset = (await timestampFileHandle.stat()).size;
+const minutesFileHandle = await fs.promises.open('minutes.bin', 'r');
+const minutesWriteStream = fs.createWriteStream('minutes.bin', { flags: 'a' });
+let firstMinute = 0;
+let prevMinute = 0;
 let sensorAuthenticated = false;
-let stateInitialized: Promise<void>;
-let timestampStream: fs.WriteStream, minutesWriteStream: fs.WriteStream;
-let timestampFileoffset: number;
-let firstMinute,
-    prevMinute: number = 0;
-let minuteFd: fs.promises.FileHandle;
 let streamRes: http.ServerResponse;
-async function initializeState() {
-    // const timestampFd = await fs.promises.open('timestamps', 'r');
-    // const stat = await timestampFd.stat();
-    // timestampFileoffset = stat.size;
-    // try {
-    //     prevMinute = await readInt(timestampFd.fd, timestampFileoffset - TIMESTAMP_SIZE) % (60 * 1000);
-    // }
-    // timestampStream = fs.createWriteStream('timestamps', { flags: 'a' });
-    minuteFd = await fs.promises.open('minutes.bin', 'r');
-    const minuteStat = await minuteFd.stat();
-    prevMinute = firstMinute + (minuteStat.size / 4 - 1) * 60 * 1000;
-    // if (minuteStat.size > 0) {
-    //     try {
-    //         firstMinute = await readInt(minuteFd.fd, 0);
-    //     } catch (err) {
-    //         console.log(err);
-    //     }
-    // }
-    minutesWriteStream = fs.createWriteStream('minutes.bin', { flags: 'a' });
+{
+    const firstTimestamp = await readBytes(timestampFileHandle, 0, TIMESTAMP_SIZE);
+    const prevTimestamp = await readBytes(timestampFileHandle, timestampFileoffset - TIMESTAMP_SIZE, TIMESTAMP_SIZE);
+    firstMinute = roundDownToMinute(firstTimestamp);
+    prevMinute = roundDownToMinute(prevTimestamp);
+    timestampFileHandle.close();
 }
-firstMinute = 1672531200000;
 
-function readInt(fd: number, offset: number): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const buffer = Buffer.alloc(4);
-        fs.read(fd, buffer, 0, 4, offset, (err, bytesRead, buffer) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(buffer.readUInt32LE(0));
-            }
-        });
-    });
+async function readMinute(minute: number): Promise<number> {
+    const offset = ((minute - firstMinute) / 60 / 1000) * 4;
+    const buffer = Buffer.alloc(4);
+    const { bytesRead } = await minutesFileHandle.read(buffer, 0, 4, offset);
+    if (bytesRead != 4) throw new Error(`expected 4 bytes, got ${bytesRead}`);
+    return buffer.readUInt32LE(0);
+}
+
+async function readBytes(fileHandle: fs.promises.FileHandle, offset: number, numBytes: number): Promise<number> {
+    const buffer = Buffer.alloc(numBytes);
+    const { bytesRead } = await fileHandle.read(buffer, 0, numBytes, offset);
+    if (bytesRead != numBytes) throw new Error(`expected ${numBytes} bytes, got ${bytesRead}`);
+    if (numBytes == 4) return buffer.readUInt32LE(0);
+    if (numBytes == 8) return Number(buffer.readBigUInt64LE(0));
 }
 
 const tcpServer = net.createServer(socket => {
     let apiKey = '';
+    // const buffer = Buffer.alloc(8);
     socket.on('data', async data => {
         if (!sensorAuthenticated) {
-            const toRead = Math.min(data.length, SENSOR_API_KEY.length - apiKey.length);
-            apiKey += data.toString().slice(0, toRead);
-            data = data.subarray(toRead);
-            console.log(apiKey);
+            const bytesToRead = Math.min(data.length, SENSOR_API_KEY.length - apiKey.length);
+            apiKey += data.toString().slice(0, bytesToRead);
+            data = data.subarray(bytesToRead);
             if (apiKey.length < SENSOR_API_KEY.length) return;
             if (apiKey === SENSOR_API_KEY) {
                 sensorAuthenticated = true;
                 console.log('sensor authenticated');
-                stateInitialized = initializeState();
             } else {
                 socket.destroy();
+                console.log('sensor authentication failed');
             }
             if (data.length === 0) return;
         }
 
-        await stateInitialized;
-        // timestampStream.write(data);
-        const timestamp = data.readUInt32LE(0);
-        const minutesDiff = (timestamp - prevMinute) % (60 * 1000);
+        // const bytesToRead = data.length;
+        // while (bytesToRead > 7) {
+        //     if (bytesToRead > 0 && bytesToRead < 8) {
+        //         buffer.set(data.subarray(data.length - bytesToRead, bytesToRead));
+        //         break;
+        //     }
+        // }
+
+        timestampWriteStream.write(data);
+
+        const timestamp = Number(data.readBigUInt64LE(0));
+        const minutesDiff = Math.floor((timestamp - prevMinute) / (60 * 1000));
         const buffer = Buffer.alloc(4);
         buffer.writeUInt32LE(timestampFileoffset);
         for (let i = 0; i < minutesDiff; i++) {
             minutesWriteStream.write(buffer);
+            prevMinute += 60 * 1000;
         }
         timestampFileoffset += TIMESTAMP_SIZE;
+        console.log(timestamp);
 
         if (streamRes) {
+            console.log('sending data to stream');
             streamRes.write(`data: ${timestamp.toString()}\n\n`);
         }
     });
@@ -114,18 +115,38 @@ app.post('/', (req, res) => {
 app.get('/data', (req, res) => {
     res.type('application/octet-stream');
     const start = ((roundDownToMinute(parseInt(req.query.s as string)) - firstMinute) / 60 / 1000) * 4;
-    const end = ((roundDownToMinute(parseInt(req.query.e as string)) - firstMinute) / 60 / 1000) * 4 - 1;
+    const end = ((roundDownToMinute(parseInt(req.query.e as string)) - firstMinute) / 60 / 1000) * 4 + 3;
     const minutesReadStream = fs.createReadStream('./minutes.bin', { start, end });
-    console.log(start, end);
     minutesReadStream.pipe(res);
+    console.log('received request: ', start, end);
 });
 
-app.get('/stream', (req, res) => {
+app.get('/stream', async (req, res) => {
+    const startMinute = parseInt(req.query.s as string);
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
     });
+    if (prevMinute >= startMinute) {
+        const startMinuteTimestampOffset = await readMinute(startMinute);
+        const timestampFd = fs.openSync('./timestamps.bin', 'r');
+        const timestampsBuffer = Buffer.alloc(timestampFileoffset - startMinuteTimestampOffset);
+        let bytesRead = fs.readSync(
+            timestampFd,
+            timestampsBuffer,
+            0,
+            timestampsBuffer.length,
+            startMinuteTimestampOffset,
+        );
+        if (bytesRead != timestampsBuffer.length)
+            throw new Error(`expected ${timestampsBuffer.length} bytes, got ${bytesRead}`);
+        fs.closeSync(timestampFd);
+        for (let i = 0; i < timestampsBuffer.length; i += TIMESTAMP_SIZE) {
+            const timestamp = timestampsBuffer.readBigUInt64LE(i);
+            res.write(`data: ${timestamp.toString()}\n\n`);
+        }
+    }
     streamRes = res;
 });
 
