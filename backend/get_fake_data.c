@@ -4,30 +4,58 @@
 #include <unistd.h>
 #include <stdio.h>
 
-#define START 1672531200
+/* #define START 1672531200000 // 1 Jan 2023 00:00:00 */
+/* #define START 1701302400000 // 1 Dec 2023 00:00:00 */
+#define START 1703289600000 // 23 Dec 2023 00:00:00
 
 int main() {
-    int fd = open("./minutes.bin", O_CREAT | O_WRONLY, 0644);
-    if (fd < 0) {
+    int timestampFd = open("./timestamps.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (timestampFd < 0) {
+        perror("open");
+        exit(1);
+    }
+    int minuteFd = open("./minutes.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (minuteFd < 0) {
         perror("open");
         exit(1);
     }
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    int now = tv.tv_sec;
-    int current = START;
-    int total = 0;
+    uint64_t now = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    uint64_t current = START;
+    uint64_t prevMinute = 0;
+    uint32_t timestampFileOffset = 0;
+    int res;
     while (current < now) {
-        int res = write(fd, &total, sizeof(int));
-        if (res < 0) {
+        res = write(timestampFd, &current, sizeof(current));
+        if (res != sizeof(current)) {
             perror("write");
             exit(1);
         }
-        int random_number = 20 + (rand() % (180 - 20 + 1));
-        total += random_number;
-        current += 60;
+        if (current - prevMinute >= 60000) {
+            res = write(minuteFd, &timestampFileOffset, sizeof(timestampFileOffset));
+            if (res != sizeof(timestampFileOffset)) {
+                perror("write");
+                exit(1);
+            }
+            prevMinute = current - (current % 60000);
+        }
+        int min = 333;
+        int max = 3000;
+        uint64_t dt = min + (rand() % (max - min + 1));
+        current += dt;
+        timestampFileOffset += sizeof(current);
     }
-    int res = close(fd);
+    if (res != sizeof(current)) {
+        perror("write");
+        exit(1);
+    }
+    res = close(timestampFd);
+    if (res < 0) {
+        perror("close");
+        exit(1);
+    }
+    res = close(minuteFd);
     if (res < 0) {
         perror("close");
         exit(1);
