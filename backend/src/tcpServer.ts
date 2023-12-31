@@ -11,14 +11,16 @@ const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
 const timestampWriteStream = fs.createWriteStream('./data/timestamps.bin', { flags: 'a' });
 const minutesWriteStream = fs.createWriteStream('./data/minutes.bin', { flags: 'a' });
 
-let sensorAuthenticated = false;
+let currentSocket;
+
 const tcpServer = net.createServer(socket => {
     // ignore connections if sensor is already connected
-    if (sensorAuthenticated) {
-        socket.destroy();
-        return;
-    }
+    // if (sensorAuthenticated) {
+    //     socket.destroy();
+    //     return;
+    // }
 
+    let sensorAuthenticated = false;
     let streamReader = new StreamReader();
     socket.on('data', async data => {
         // concatenate data to buffer
@@ -33,6 +35,8 @@ const tcpServer = net.createServer(socket => {
             // compare api key
             if (String.fromCharCode(...apiKeyBuf) == SENSOR_API_KEY) {
                 sensorAuthenticated = true;
+                if (currentSocket) currentSocket.destroy();
+                currentSocket = socket;
                 console.log('sensor authenticated');
                 data = data.subarray(data.length - streamReader.bytesLeft);
             } else {
@@ -74,9 +78,15 @@ const tcpServer = net.createServer(socket => {
         streamReader.eraseProcessedBytes();
     });
 
-    socket.on('close', () => {
+    socket.on('error', err => {
+        console.log('sensor error', err);
+        socket.destroy();
+    });
+
+    socket.on('close', hadError => {
         console.log('sensor disconnected');
-        sensorAuthenticated = false;
+        if (hadError) console.log('sensor closed with error');
+        socket.destroy();
     });
 });
 
