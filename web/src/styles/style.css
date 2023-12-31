@@ -1,0 +1,48 @@
+* {
+    color: white;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    background-color: black;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#chartGrid {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    grid-template-rows: 1fr;
+    flex-grow: 1;
+}
+
+#axisLeftLabel {
+    grid-column: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#chartData {
+    grid-column: 2;
+    width: 100%;
+    height: 100%;
+}
+
+.axisLeft line {
+    stroke: #808080;
+    stroke-opacity: 0.8;
+}
+
+.glow {
+    filter: url(#glow);
+}
+
+#axisLeftLabel h2 {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
