@@ -10,12 +10,12 @@
 #define START 1703289600000 // 23 Dec 2023 00:00:00
 
 int main() {
-    int timestampFd = open("./timestamps.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    int timestampFd = open("./data/timestamps.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
     if (timestampFd < 0) {
         perror("open");
         exit(1);
     }
-    int minuteFd = open("./minutes.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    int minuteFd = open("./data/minutes.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
     if (minuteFd < 0) {
         perror("open");
         exit(1);

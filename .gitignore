@@ -5,7 +5,7 @@ node_modules/
 
 backend/.env
 backend/index.js
-backend/*.bin
+backend/data/
 backend/gen_fake_data
 
 esp/build/
