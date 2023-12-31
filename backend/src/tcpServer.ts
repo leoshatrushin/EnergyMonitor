@@ -11,7 +11,7 @@ const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
 const timestampWriteStream = fs.createWriteStream('./data/timestamps.bin', { flags: 'a' });
 const minutesWriteStream = fs.createWriteStream('./data/minutes.bin', { flags: 'a' });
 
-let currentSocket;
+let currentSocket = null;
 
 const tcpServer = net.createServer(socket => {
     // ignore connections if sensor is already connected
@@ -80,13 +80,11 @@ const tcpServer = net.createServer(socket => {
 
     socket.on('error', err => {
         console.log('sensor error', err);
-        socket.destroy();
     });
 
     socket.on('close', hadError => {
         console.log('sensor disconnected');
         if (hadError) console.log('sensor closed with error');
-        socket.destroy();
     });
 });
 
