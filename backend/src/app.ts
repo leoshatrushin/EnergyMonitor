@@ -6,11 +6,6 @@ const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 
 const app = express();
 
-app.use(function authenticate(req, res, next) {
-    if (authenticateRequest(req)) next();
-    else res.sendFile(WEB_ROOT_PATH + '/login.html');
-});
-
 app.post('/', (req, res) => {
     let body = '';
     req.on('data', chunk => {
@@ -29,6 +24,11 @@ app.post('/', (req, res) => {
             res.end(JSON.stringify({ authenticated: false }));
         }
     });
+});
+
+app.use(function authenticate(req, res, next) {
+    if (authenticateRequest(req)) next();
+    else res.sendFile(WEB_ROOT_PATH + '/login.html');
 });
 
 app.use(express.static(WEB_ROOT_PATH));
