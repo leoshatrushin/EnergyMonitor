@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include "netdb.h"
 #include "esp_tls.h"
+#include "esp_netif_sntp.h"
 
 extern const uint8_t server_root_cert_pem_start[] asm(CERT_START);
 extern const uint8_t server_root_cert_pem_end[]   asm(CERT_END);
@@ -46,7 +47,7 @@ int Esp_tls_conn_write(esp_tls_t *tls, const void *data, int len) {
     return written_bytes;
 }
 
-int to_ms(struct timeval tv) {
+uint64_t to_ms(struct timeval tv) {
     return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
@@ -156,12 +157,23 @@ void app_main(void) {
 
     // create socket task
     /* xTaskCreate(socket_task, "socket_task", 4096, NULL, 0, &socket_task_handle); */
+    
+    // perform SNTP synchronization
+    ESP_LOGI(TAG, "Initializing SNTP");
+    esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&sntp_config);
+
+    // wait for SNTP synchronization
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
+    }
+    ESP_LOGI(TAG, "SNTP sync finished");
 
     // read ADC
     int adc_raw, voltage;
     bool voltage_high = false;
     struct timeval tv, read_start;
-    int time_ms;
+    uint64_t time_ms;
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
     esp_tls_t *tls = esp_tls_init();
     NULL_CHECK(tls);
@@ -186,7 +198,8 @@ void app_main(void) {
                 voltage_high = !voltage_high;
                 gettimeofday(&tv, NULL);
                 time_ms = to_ms(tv);
-                ESP_LOGI(TAG, "Voltage %s at %d", voltage_high ? "HIGH" : "LOW", time_ms);
+                ESP_LOGI(TAG, "tv_sec: %lld, tv_usec: %ld", tv.tv_sec, tv.tv_usec);
+                ESP_LOGI(TAG, "Voltage %s at %llu", voltage_high ? "HIGH" : "LOW", time_ms);
                 /* memcpy(curr_map_ptr, &time_ms, sizeof(time_ms)); */
                 /* partition_offset += sizeof(time_ms); */
                 /* if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr); */
