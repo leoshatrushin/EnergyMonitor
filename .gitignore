@@ -4,7 +4,7 @@
 node_modules/
 
 backend/.env
-backend/index.js
+backend/dist/
 backend/data/
 backend/gen_fake_data
 
