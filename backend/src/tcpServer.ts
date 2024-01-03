@@ -1,9 +1,9 @@
 import fs from 'fs';
 import net from 'net';
-import { TIMESTAMP_SIZE, FILE_OFFSET_SIZE, MINUTE } from './common/constants';
-import { StreamReader, roundDown } from './common/utils';
-import state from './state';
-import wss from './wss';
+import { TIMESTAMP_SIZE, FILE_OFFSET_SIZE, MINUTE } from './common/constants.js';
+import { StreamReader, roundDown } from './common/utils.js';
+import state from './state.js';
+import wss from './wss.js';
 
 const SENSOR_PORT = process.env.SENSOR_PORT;
 const SENSOR_API_KEY = process.env.SENSOR_API_KEY;

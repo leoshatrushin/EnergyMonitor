@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateRequest } from './utils';
+import { authenticateRequest } from './utils.js';
 
 const WEB_ROOT_PATH = process.env.WEB_ROOT_PATH;
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;

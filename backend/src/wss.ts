@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { TIMESTAMP_SIZE, MINUTE, FILE_OFFSET_SIZE } from './common/constants';
-import state from './state';
+import { TIMESTAMP_SIZE, MINUTE, FILE_OFFSET_SIZE } from './common/constants.js';
+import state from './state.js';
 
 type WSState = {
     ws: WebSocket;

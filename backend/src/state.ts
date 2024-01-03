@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { TIMESTAMP_SIZE, MINUTE } from './common/constants';
-import { roundDown } from './common/utils';
+import { TIMESTAMP_SIZE, MINUTE } from './common/constants.js';
+import { roundDown } from './common/utils.js';
 
 let timestampFileOffset = 0;
 let firstMinute: number = 0;
