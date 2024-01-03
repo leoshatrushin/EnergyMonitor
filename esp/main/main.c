@@ -22,7 +22,7 @@ extern const uint8_t server_root_cert_pem_end[]   asm(CERT_END);
 #define ADC_BITWIDTH ADC_BITWIDTH_DEFAULT // use maximum ADC bit width
 #define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
 #define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
-#define ADC_READ_INTERVAL_MS 1000
+#define ADC_READ_INTERVAL_MS 25
 #define VOLTAGE_THRESHOLD 1800
 
 EventGroupHandle_t s_wifi_event_group;
@@ -118,6 +118,8 @@ void app_main(void) {
                                                         &wifi_disconnect_handler, NULL, &disconnect_handler_instance));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "wifi init finished");
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+    ESP_LOGI(TAG, "wifi connected");
 
     // find the partition map in the partition table
     const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
@@ -164,8 +166,9 @@ void app_main(void) {
     esp_netif_sntp_init(&sntp_config);
 
     // wait for SNTP synchronization
-    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(30000)) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update system time within 30s timeout");
+        abort();
     }
     ESP_LOGI(TAG, "SNTP sync finished");
 
@@ -198,8 +201,7 @@ void app_main(void) {
                 voltage_high = !voltage_high;
                 gettimeofday(&tv, NULL);
                 time_ms = to_ms(tv);
-                ESP_LOGI(TAG, "tv_sec: %lld, tv_usec: %ld", tv.tv_sec, tv.tv_usec);
-                ESP_LOGI(TAG, "Voltage %s at %llu", voltage_high ? "HIGH" : "LOW", time_ms);
+                ESP_LOGI(TAG, "Voltage %s at %llu", !voltage_high ? "HIGH" : "LOW", time_ms);
                 /* memcpy(curr_map_ptr, &time_ms, sizeof(time_ms)); */
                 /* partition_offset += sizeof(time_ms); */
                 /* if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr); */
