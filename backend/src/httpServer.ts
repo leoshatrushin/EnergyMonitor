@@ -1,7 +1,7 @@
 import http from 'http';
-import { authenticateRequest } from './utils.js';
-import wss from './wss.js';
-import app from './app.js';
+import { authenticateRequest } from './utils';
+import wss from './wss';
+import app from './app';
 
 const FRONTEND_PORT = process.env.FRONTEND_PORT;
 

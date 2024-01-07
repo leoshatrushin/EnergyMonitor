@@ -1,27 +1,20 @@
 import fs from 'fs';
 import net from 'net';
-import { TIMESTAMP_SIZE, FILE_OFFSET_SIZE, MINUTE } from './common/constants.js';
-import { StreamReader, roundDown } from './common/utils.js';
-import state from './state.js';
-import wss from './wss.js';
+import { SIZEOF_UINT32, BAR_WIDTH } from './common/constants';
+import { FILE_STATE } from './constants';
+import { StreamReader, roundDown } from './common/utils';
+import state from './state';
+import wss from './wss';
 
 const SENSOR_PORT = process.env.SENSOR_PORT;
 const SENSOR_API_KEY = process.env.SENSOR_API_KEY;
-
-const timestampWriteStream = fs.createWriteStream('./data/timestamps.bin', { flags: 'a' });
-const minutesWriteStream = fs.createWriteStream('./data/minutes.bin', { flags: 'a' });
+const decoder = new TextDecoder();
 
 let currentSocket = null;
-
 const tcpServer = net.createServer(socket => {
-    // ignore connections if sensor is already connected
-    // if (sensorAuthenticated) {
-    //     socket.destroy();
-    //     return;
-    // }
-
     let sensorAuthenticated = false;
     let streamReader = new StreamReader();
+
     socket.on('data', async data => {
         // concatenate data to buffer
         streamReader.readInto(data);
@@ -33,12 +26,12 @@ const tcpServer = net.createServer(socket => {
             if (!apiKeyBuf) return;
 
             // compare api key
-            if (String.fromCharCode(...apiKeyBuf) == SENSOR_API_KEY) {
+            if (decoder.decode(apiKeyBuf) == SENSOR_API_KEY) {
                 sensorAuthenticated = true;
                 if (currentSocket) currentSocket.destroy();
                 currentSocket = socket;
                 console.log('sensor authenticated');
-                data = data.subarray(data.length - streamReader.bytesLeft);
+                data = data.subarray(data.byteLength - streamReader.bytesLeft);
             } else {
                 socket.destroy();
                 console.log('sensor authentication failed');
@@ -46,30 +39,53 @@ const tcpServer = net.createServer(socket => {
             }
         }
 
-        // write to timestamp file directly
-        timestampWriteStream.write(data);
+        // append to timestamp file
+        const timestampBuf = streamReader.readBytes(roundDown(streamReader.bytesLeft, SIZEOF_UINT32));
+        const timestampFileState = state[BAR_WIDTH.LINE];
+        fs.appendFileSync(timestampFileState.fd, timestampBuf);
 
-        // write to minutes file
-        // process every complete timestamp received
-        const bytesLeft = streamReader.bytesLeft;
-        const timestampBuf = streamReader.readBytes(roundDown(bytesLeft, TIMESTAMP_SIZE));
-        const view = new DataView(timestampBuf.buffer);
-        for (let offset = 0; offset < timestampBuf.length; offset += TIMESTAMP_SIZE) {
-            const timestamp = Number(view.getBigUint64(offset, true));
-            console.log(timestamp);
+        // create timestamp array
+        const timestamps = new Uint32Array(timestampBuf.buffer);
+        const lastTimestamp = timestamps[timestamps.length - 1];
 
-            const minutesDiff = roundDown(timestamp - state.lastMinute, MINUTE) / MINUTE;
-            // save offset for each new minute
-            const offsetBuf = Buffer.alloc(FILE_OFFSET_SIZE * minutesDiff);
-            for (let minuteDiff = 0; minuteDiff < minutesDiff; minuteDiff++) {
-                offsetBuf.writeUInt32LE(state.timestampFileOffset, minuteDiff * FILE_OFFSET_SIZE);
+        // set first key if file empty
+        if (timestampFileState.lastKey == 0) timestampFileState.firstKey = lastTimestamp;
+
+        // append to each index file
+        for (const barWidth in state) {
+            if (barWidth == String(BAR_WIDTH.LINE)) continue;
+            const fileState: FILE_STATE = state[barWidth];
+
+            // set keys if file empty
+            if (fileState.lastKey == 0) {
+                fileState.firstKey = roundDown(lastTimestamp, Number(barWidth));
+                fileState.lastKey = roundDown(lastTimestamp, Number(barWidth));
             }
-            minutesWriteStream.write(offsetBuf);
 
-            // update state
-            state.lastMinute += MINUTE * minutesDiff;
-            state.timestampFileOffset += TIMESTAMP_SIZE;
+            // allocate buffer for new bar offsets
+            const totalNewBars = roundDown(lastTimestamp - fileState.lastKey, Number(barWidth)) / Number(barWidth);
+            const newOffsets = new Uint32Array(totalNewBars);
+            let barsWritten = 0;
+
+            // fill buffer with new offsets
+            for (let i = 0; i < timestamps.length; i += 1) {
+                const newBars = roundDown(timestamps[i] - fileState.lastKey, Number(barWidth)) / Number(barWidth);
+                newOffsets.fill(timestampFileState.size + i * SIZEOF_UINT32, barsWritten, barsWritten + newBars);
+                barsWritten += newBars;
+
+                // update state
+                fileState.size += newBars * SIZEOF_UINT32;
+                fileState.lastKey += totalNewBars * Number(barWidth);
+                fileState.lastOffset = timestampFileState.size + i * SIZEOF_UINT32;
+            }
+
+            // append new offsets to file
+            fs.appendFileSync(fileState.fd, new Uint8Array(newOffsets.buffer));
         }
+
+        // update state
+        timestampFileState.size += timestampBuf.byteLength;
+        timestampFileState.lastKey = lastTimestamp;
 
         // send new timestamps to clients
         wss.emit('timestamps', timestampBuf);
@@ -83,8 +99,7 @@ const tcpServer = net.createServer(socket => {
     });
 
     socket.on('close', hadError => {
-        console.log('sensor disconnected');
-        if (hadError) console.log('sensor closed with error');
+        console.log(`sensor close${hadError ? ' with error' : ''}}`);
     });
 });
 

@@ -1,4 +1,7 @@
 import http from 'http';
+import fs from 'fs';
+import { WebSocket } from 'ws';
+import { RESPONSE } from './common/constants';
 
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 
@@ -16,6 +19,29 @@ function parseCookies(req: http.IncomingMessage) {
             cookies[name.trim()] = decodeURI(value);
         });
     return cookies;
+}
+
+export function readBytes(fd: number, offset: number, numBytes: number): Buffer {
+    const buffer = Buffer.alloc(numBytes);
+    let numRead = 0;
+    while (numRead < numBytes) {
+        const bytesRead = fs.readSync(fd, buffer, numRead, numBytes, offset + numRead);
+        if (bytesRead == 0) throw new Error('unexpected end of file');
+        numRead += bytesRead;
+    }
+    return buffer;
+}
+
+export function readUInt32LE(fd: number, offset: number): number {
+    return readBytes(fd, offset, 4).readUInt32LE(0);
+}
+
+export function sendResponse(ws: WebSocket, response: RESPONSE) {
+    const header = Buffer.alloc(TIMESTAMP_SIZE + OFF_T_SIZE);
+    header.writeBigUInt64LE(BigInt(0));
+    header.writeUInt32LE(response.dataSize, TIMESTAMP_SIZE);
+    ws.send(header);
+    ws.send(response.data);
 }
 
 // async function readBytes(fileHandle: fs.promises.FileHandle, offset: number, numBytes: number): Promise<number> {
