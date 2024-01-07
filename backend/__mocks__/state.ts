@@ -4,29 +4,29 @@ import { fileNames, FILE_STATE } from './constants';
 import { roundDown } from './common/utils';
 import { readUInt32LE } from './utils';
 
-let state: { [key in BAR_WIDTH]: FILE_STATE } = {} as { [key in BAR_WIDTH]: FILE_STATE };
+let state: { [key in BAR_WIDTH]: FILE_STATE };
 
-const timestampsFd = fs.openSync(`./data/${fileNames[BAR_WIDTH.LINE]}`, 'w+');
+const timestampsFd = fs.openSync(`./data/${fileNames[BAR_WIDTH.LINE]}`, 'r');
 const timestampsFileSize = fs.fstatSync(timestampsFd).size;
 const timestampFileState: FILE_STATE = {
     fd: timestampsFd,
     size: timestampsFileSize,
-    firstKey: timestampsFileSize > 0 ? readUInt32LE(timestampsFd, 0) : 0,
-    lastKey: timestampsFileSize > 0 ? readUInt32LE(timestampsFd, timestampsFileSize - SIZEOF_UINT32) : 0,
+    firstKey: readUInt32LE(timestampsFd, 0),
+    lastKey: readUInt32LE(timestampsFd, timestampsFileSize - SIZEOF_UINT32),
     lastOffset: 0,
 };
 state[BAR_WIDTH.LINE] = timestampFileState;
 
 for (const barWidth in fileNames) {
     if (barWidth == String(BAR_WIDTH.LINE)) continue;
-    const fd = fs.openSync(`./data/${fileNames[barWidth]}`, 'w+');
+    const fd = fs.openSync(`./data/${fileNames[barWidth]}`, 'r');
     const fileSize = fs.fstatSync(fd).size;
     const fileState: FILE_STATE = {
         fd,
         size: fileSize,
         firstKey: roundDown(timestampFileState.firstKey, Number(barWidth)),
         lastKey: roundDown(timestampFileState.lastKey, Number(barWidth)),
-        lastOffset: fileSize > 0 ? readUInt32LE(fd, fileSize - SIZEOF_UINT32) : 0,
+        lastOffset: readUInt32LE(fd, fileSize - SIZEOF_UINT32),
     };
     state[barWidth] = fileState;
 }

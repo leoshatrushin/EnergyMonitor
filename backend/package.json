@@ -5,7 +5,7 @@
     "main": "src/index.ts",
     "type": "module",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
+        "test": "jest",
         "dev": "tsx watch src/index.ts",
         "prod": "tsc"
     },
@@ -19,8 +19,13 @@
         "ws": "^8.16.0"
     },
     "devDependencies": {
+        "@babel/preset-env": "^7.23.7",
+        "@babel/preset-typescript": "^7.23.3",
+        "@jest/globals": "^29.7.0",
         "@types/express": "^4.17.21",
+        "@types/jest": "^29.5.11",
         "@types/node": "^20.10.5",
+        "jest": "^29.7.0",
         "tsx": "^4.7.0",
         "typescript": "^5.3.3"
     }
