@@ -57,6 +57,7 @@ function updateData(data: Bar[]) {
         .padding(0.25);
     const yScale = scaleLinear()
         .domain([0, max(bars, (d: Bar) => d.value)])
+        .nice()
         .range([barsHeight, 0]);
 
     svg.selectAll('rect')
