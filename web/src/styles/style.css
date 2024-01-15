@@ -46,3 +46,12 @@ body {
     writing-mode: vertical-rl;
     transform: rotate(180deg);
 }
+
+.top {
+    display: flex;
+    justify-content: space-between;
+}
+
+#title {}
+
+#chartPicke {}
