@@ -13,5 +13,7 @@ export const dataDir = path.resolve('./data');
 
 export const fileNames: { [key in BAR_WIDTH]: string } = {
     [BAR_WIDTH.LINE]: 'timestamps.bin',
-    [BAR_WIDTH.BAR_1m]: 'minutes.bin',
+    [BAR_WIDTH.BAR_5m]: '5minutes.bin',
+    [BAR_WIDTH.BAR_1h]: '1hour.bin',
+    [BAR_WIDTH.BAR_1d]: '1day.bin',
 };

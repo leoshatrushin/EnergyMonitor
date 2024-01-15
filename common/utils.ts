@@ -3,23 +3,18 @@ export class StreamReader {
     private offset: number;
     bytesLeft: number;
     constructor(initialData?: Uint8Array) {
-        this.offset = 0;
         this.buffer = initialData ? initialData : new Uint8Array(0);
+        this.offset = 0;
         this.bytesLeft = initialData ? initialData.byteLength : 0;
     }
     readInto(data: Uint8Array) {
-        if (this.buffer) {
-            const newBuffer = new Uint8Array(this.buffer.byteLength + data.byteLength);
-            newBuffer.set(this.buffer);
-            newBuffer.set(data, this.buffer.byteLength);
-            this.buffer = newBuffer;
-        } else {
-            this.buffer = data;
-        }
+        const newBuffer = new Uint8Array(this.buffer.byteLength + data.byteLength);
+        newBuffer.set(this.buffer);
+        newBuffer.set(data, this.buffer.byteLength);
+        this.buffer = newBuffer;
         this.bytesLeft += data.byteLength;
     }
     readBytes(numBytes: number) {
-        if (!this.buffer) return null;
         if (this.buffer.length - this.offset < numBytes) return null;
         const res = this.buffer.subarray(this.offset, this.offset + numBytes);
         this.offset += numBytes;
@@ -27,7 +22,9 @@ export class StreamReader {
         return res;
     }
     eraseProcessedBytes() {
-        this.buffer = this.buffer.subarray(this.offset);
+        const newBuffer = new Uint8Array(this.buffer.byteLength - this.offset);
+        newBuffer.set(this.buffer.subarray(this.offset));
+        this.buffer = newBuffer;
         this.offset = 0;
         this.bytesLeft = this.buffer.byteLength;
     }

@@ -7,26 +7,30 @@
 
 /* #define START 1672531200000 // 1 Jan 2023 00:00:00 */
 /* #define START 1701302400000 // 1 Dec 2023 00:00:00 */
-#define START 1703289600000 // 23 Dec 2023 00:00:00
+/* #define START 1703289600000 // 23 Dec 2023 00:00:00 */
+#define START 1703980800000 // 1 Jan 2024 00:00:00
+
+#define ERROR_CHECK(res, msg) \
+    if (res < 0) { \
+        perror(msg); \
+        exit(1); \
+    }
 
 int main() {
     int timestampFd = open("./data/timestamps.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
-    if (timestampFd < 0) {
-        perror("open");
-        exit(1);
-    }
+    ERROR_CHECK(timestampFd, "open");
+
     int minuteFd = open("./data/minutes.bin", O_CREAT | O_TRUNC | O_WRONLY, 0644);
-    if (minuteFd < 0) {
-        perror("open");
-        exit(1);
-    }
+    ERROR_CHECK(minuteFd, "open");
+
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    int res = gettimeofday(&tv, NULL);
+    ERROR_CHECK(res, "gettimeofday");
+
     uint64_t now = tv.tv_sec * 1000 + tv.tv_usec / 1000;
     uint64_t current = START;
     uint64_t prevMinute = 0;
     uint32_t timestampFileOffset = 0;
-    int res;
     while (current < now) {
         res = write(timestampFd, &current, sizeof(current));
         if (res != sizeof(current)) {
@@ -52,13 +56,7 @@ int main() {
         exit(1);
     }
     res = close(timestampFd);
-    if (res < 0) {
-        perror("close");
-        exit(1);
-    }
+    ERROR_CHECK(res, "close");
     res = close(minuteFd);
-    if (res < 0) {
-        perror("close");
-        exit(1);
-    }
+    ERROR_CHECK(res, "close");
 }

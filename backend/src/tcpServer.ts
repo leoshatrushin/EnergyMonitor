@@ -21,8 +21,8 @@ const tcpServer = net.createServer(socket => {
 
         // handle authentication
         if (!sensorAuthenticated) {
-            // wait for 128 bytes
-            const apiKeyBuf = streamReader.readBytes(128);
+            // wait for api key
+            const apiKeyBuf = streamReader.readBytes(SENSOR_API_KEY.length);
             if (!apiKeyBuf) return;
 
             // compare api key
@@ -31,7 +31,6 @@ const tcpServer = net.createServer(socket => {
                 if (currentSocket) currentSocket.destroy();
                 currentSocket = socket;
                 console.log('sensor authenticated');
-                data = data.subarray(data.byteLength - streamReader.bytesLeft);
             } else {
                 socket.destroy();
                 console.log('sensor authentication failed');
@@ -45,7 +44,11 @@ const tcpServer = net.createServer(socket => {
         fs.appendFileSync(timestampFileState.fd, timestampBuf);
 
         // create timestamp array
-        const timestamps = new Uint32Array(timestampBuf.buffer);
+        const timestamps = new Uint32Array(
+            timestampBuf.buffer,
+            timestampBuf.byteOffset,
+            timestampBuf.byteLength / SIZEOF_UINT32,
+        );
         const lastTimestamp = timestamps[timestamps.length - 1];
 
         // set first key if file empty
@@ -56,10 +59,13 @@ const tcpServer = net.createServer(socket => {
             if (barWidth == String(BAR_WIDTH.LINE)) continue;
             const fileState: FILE_STATE = state[barWidth];
 
-            // set keys if file empty
+            // initialize file and state if empty
             if (fileState.lastKey == 0) {
-                fileState.firstKey = roundDown(lastTimestamp, Number(barWidth));
-                fileState.lastKey = roundDown(lastTimestamp, Number(barWidth));
+                fileState.firstKey = roundDown(timestamps[0], Number(barWidth));
+                fileState.lastKey = roundDown(timestamps[0], Number(barWidth));
+                const firstOffset = Buffer.alloc(4);
+                firstOffset.writeUInt32LE(0);
+                fs.appendFileSync(fileState.fd, firstOffset);
             }
 
             // allocate buffer for new bar offsets
@@ -68,15 +74,15 @@ const tcpServer = net.createServer(socket => {
             let barsWritten = 0;
 
             // fill buffer with new offsets
-            for (let i = 0; i < timestamps.length; i += 1) {
+            for (let i = 0; i < timestamps.length; i++) {
                 const newBars = roundDown(timestamps[i] - fileState.lastKey, Number(barWidth)) / Number(barWidth);
                 newOffsets.fill(timestampFileState.size + i * SIZEOF_UINT32, barsWritten, barsWritten + newBars);
                 barsWritten += newBars;
 
                 // update state
                 fileState.size += newBars * SIZEOF_UINT32;
-                fileState.lastKey += totalNewBars * Number(barWidth);
-                fileState.lastOffset = timestampFileState.size + i * SIZEOF_UINT32;
+                fileState.lastKey += newBars * Number(barWidth);
+                if (newBars) fileState.lastOffset = timestampFileState.size + i * SIZEOF_UINT32;
             }
 
             // append new offsets to file

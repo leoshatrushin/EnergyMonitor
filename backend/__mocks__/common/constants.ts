@@ -10,7 +10,7 @@ export enum REQUEST_TYPE {
     LIVE = 1,
 }
 
-export type REQUEST = {
+export type DATA_REQUEST = {
     id: number;
     type: REQUEST_TYPE;
     barWidth: BAR_WIDTH;
@@ -18,7 +18,7 @@ export type REQUEST = {
     end: number;
 };
 
-export type RESPONSE = {
+export type DATA_RESPONSE = {
     id: number;
     start: number;
     end: number;

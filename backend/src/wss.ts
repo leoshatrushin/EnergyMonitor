@@ -1,11 +1,13 @@
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { REQUEST_TYPE, REQUEST, SIZEOF_UINT32, BAR_WIDTH } from './common/constants';
+import { REQUEST_TYPE, REQUEST, RESPONSE, SIZEOF_UINT32, BAR_WIDTH, RESPONSE_TYPE } from './common/constants';
 import state from './state';
 import { readUInt32LE } from './utils';
 
 const wss = new WebSocketServer({ noServer: true });
 const clients = new Set<WS_State>();
+
+const MAX_REQUEST_SIZE = 1000;
 
 // stream timestamps
 wss.on('timestamp', (timestampbuf: Buffer) => {
@@ -26,12 +28,10 @@ wss.on('timestamp', (timestampbuf: Buffer) => {
     }
 });
 
-const MAX_REQUEST_SIZE = 1000;
-
 function validateRequest(request: REQUEST) {
     // check validity
-    if (!(request.type in REQUEST_TYPE)) return `Invalid request type ${request.type}`;
-    if (!(request.barWidth in BAR_WIDTH)) return `Invalid bar width ${request.barWidth}`;
+    if (!Object.values(REQUEST_TYPE).includes(request.type)) return `Invalid request type ${request.type}`;
+    if (!Object.values(BAR_WIDTH).includes(request.barWidth)) return `Invalid bar width ${request.barWidth}`;
     if (request.start > request.end)
         return `Invalid request bounds start ${request.start} greater than end ${request.end}`;
     let barWidth = request.barWidth;
@@ -42,19 +42,21 @@ function validateRequest(request: REQUEST) {
     }
 
     // check size
-    if (request.type == REQUEST_TYPE.LIVE && request.end > MAX_REQUEST_SIZE)
-        return `Request size ${request.end} too large`;
-    else {
-        const requestSize = (request.end - request.start) / barWidth;
-        if (requestSize > MAX_REQUEST_SIZE) return `Request size ${requestSize} too large`;
-    }
+    const requestSize = (request.end - request.start) / barWidth;
+    if (requestSize > MAX_REQUEST_SIZE) return `Request size ${requestSize} too large`;
 
     return '';
 }
 
+// get offset in bar index file for bar corresponding to timestamp
 function getOffset(timestamp: number, barWidth: BAR_WIDTH) {
     const fileState = state[barWidth];
     return ((timestamp - fileState.firstKey) / barWidth) * SIZEOF_UINT32;
+}
+
+function getTimestamp(offset: number, barWidth: BAR_WIDTH) {
+    const fileState = state[barWidth];
+    return fileState.firstKey + (offset / SIZEOF_UINT32) * barWidth;
 }
 
 function clamp(min: number, value: number, max: number) {
@@ -70,7 +72,7 @@ function getBounds(request: REQUEST): {
 } {
     const fileState = state[request.barWidth];
     // line requests are in multiples of min bar width
-    const barWidth = request.barWidth == BAR_WIDTH.LINE ? Number(Object.keys(BAR_WIDTH)[1]) : request.barWidth;
+    const barWidth = request.barWidth == BAR_WIDTH.LINE ? Number(Object.values(BAR_WIDTH)[1]) : request.barWidth;
     const barFileState = state[barWidth];
 
     const clampedStart = clamp(barFileState.firstKey, request.start, barFileState.lastKey);
@@ -106,7 +108,7 @@ function getBounds(request: REQUEST): {
         if (barEnd == barFileState.size) {
             fileEnd = fileState.size;
         } else {
-            fileEnd = readUInt32LE(barFileState.fd, barEnd);
+            fileEnd = readUInt32LE(barFileState.fd, barEnd - SIZEOF_UINT32);
             // also get the next timestamp so we can calculate the gradient
             fileEnd = Math.min(fileEnd + SIZEOF_UINT32, fileState.size);
         }
@@ -115,7 +117,17 @@ function getBounds(request: REQUEST): {
         fileEnd = barEnd;
     }
 
-    return { start: barStart, end: barEnd - barWidth, fileStart, fileEnd, appendLast };
+    const end =
+        request.type == REQUEST_TYPE.LIVE
+            ? getTimestamp(barEnd, barWidth)
+            : getTimestamp(barEnd - SIZEOF_UINT32, barWidth);
+    return {
+        start: getTimestamp(barStart, barWidth),
+        end,
+        fileStart,
+        fileEnd,
+        appendLast,
+    };
 }
 
 type WS_State = {
@@ -130,21 +142,22 @@ wss.on('connection', ws => {
     };
     clients.add(ws_state);
 
-    ws.on('message', (data: ArrayBuffer) => {
+    ws.on('message', (data: Buffer) => {
         // parse request
         if (data.byteLength != 5 * SIZEOF_UINT32) {
             console.log(`Invalid request: ${data.byteLength} bytes`);
             return;
         }
-        data = new Uint32Array(data);
+        const alignedBuffer = new Uint8Array(data.byteLength);
+        alignedBuffer.set(data);
+        const requestArray = new Uint32Array(alignedBuffer.buffer);
         const request: REQUEST = {
-            id: data[0],
-            type: data[1],
-            barWidth: data[2],
-            start: data[3],
-            end: data[4],
+            id: requestArray[0],
+            type: requestArray[1],
+            barWidth: requestArray[2],
+            start: requestArray[3],
+            end: requestArray[4],
         };
-        console.log(`received ws request: ${request} `);
 
         // validate request
         const error = validateRequest(request);
@@ -156,33 +169,44 @@ wss.on('connection', ws => {
         // get bounds
         const { start, end, fileStart, fileEnd, appendLast } = getBounds(request);
 
-        // read file
+        // form response
+        const response: RESPONSE = {
+            id: request.id,
+            type: RESPONSE_TYPE.DATA,
+            start,
+            end,
+            data: null,
+        };
         let dataSize = fileEnd - fileStart;
-        // n elements have n-1 differences
-        if (request.barWidth != BAR_WIDTH.LINE) dataSize -= SIZEOF_UINT32;
-        if (appendLast) dataSize += SIZEOF_UINT32;
-        const buffer = Buffer.alloc(4 * SIZEOF_UINT32 + fileEnd - fileStart);
-        buffer.writeUInt32LE(request.id, 0);
-        buffer.writeUInt32LE(start, 4);
-        buffer.writeUInt32LE(end, 8);
-        buffer.writeUInt32LE(dataSize, 12);
-        fs.readSync(state[request.barWidth].fd, buffer, 4 * SIZEOF_UINT32, fileEnd - fileStart, fileStart);
+        const responseBuffer = Buffer.alloc(4 * SIZEOF_UINT32 + dataSize);
+        const responseHeader = Uint32Array.from(
+            Object.values(
+                Object.keys(response)
+                    .slice(0, -1)
+                    .map(key => response[key]),
+            ),
+        );
+        responseBuffer.set(new Uint8Array(responseHeader.buffer), 0);
 
-        // calculate differences
-        const array = new Uint32Array(buffer.buffer, 4 * SIZEOF_UINT32);
+        // read file
+        fs.readSync(state[request.barWidth].fd, responseBuffer, 4 * SIZEOF_UINT32, fileEnd - fileStart, fileStart);
+
         if (request.barWidth != BAR_WIDTH.LINE) {
-            for (let i = 1; i < array.length; i += 1) {
-                array[i - 1] = array[i] - array[i - 1];
-            }
-        }
+            debugger;
+            const dataArray = new Uint32Array(responseBuffer.buffer, 4 * SIZEOF_UINT32);
 
-        // append last
-        if (appendLast) {
-            array[array.length - 1] = state[BAR_WIDTH.LINE].size - SIZEOF_UINT32 - array[array.length - 1];
+            // calculate differences
+            for (let i = 1; i < dataArray.length; i += 1) {
+                dataArray[i - 1] = (dataArray[i] - dataArray[i - 1]) / SIZEOF_UINT32;
+            }
+
+            // append last
+            dataArray[dataArray.length - 1] =
+                (state[BAR_WIDTH.LINE].size - dataArray[dataArray.length - 1]) / SIZEOF_UINT32;
         }
 
         // send response
-        ws.send(buffer.subarray(0, 4 * SIZEOF_UINT32 + dataSize));
+        ws.send(responseBuffer);
 
         // start streaming
         if (request.type == REQUEST_TYPE.LIVE) {

@@ -2,25 +2,20 @@ import { StreamReader } from '../src/common/utils';
 
 const helloWorld = 'hello world';
 
-function helloWorldStreamReader() {
-    const streamReader = new StreamReader();
-    const data = Buffer.from(helloWorld);
-    streamReader.readInto(data);
-    return streamReader;
-}
-
 const decoder = new TextDecoder();
 
 describe('streamreader', () => {
     it('should correctly read back input data', () => {
-        const streamReader = helloWorldStreamReader();
+        const streamReader = new StreamReader();
+        streamReader.readInto(Buffer.from(helloWorld));
 
         const result = streamReader.readBytes(helloWorld.length);
         expect(decoder.decode(result)).toEqual(helloWorld);
     });
 
     it('should correctly read back input data in chunks', () => {
-        const streamReader = helloWorldStreamReader();
+        const streamReader = new StreamReader();
+        streamReader.readInto(Buffer.from(helloWorld));
 
         const result = streamReader.readBytes(5);
         expect(decoder.decode(result)).toEqual('hello');
@@ -30,7 +25,8 @@ describe('streamreader', () => {
     });
 
     it("shouldn't break when erasing processed bytes", () => {
-        const streamReader = helloWorldStreamReader();
+        const streamReader = new StreamReader();
+        streamReader.readInto(Buffer.from(helloWorld));
 
         const result = streamReader.readBytes(5);
         expect(decoder.decode(result)).toEqual('hello');
@@ -42,7 +38,8 @@ describe('streamreader', () => {
     });
 
     it('should correctly concatenate data', () => {
-        const streamReader = helloWorldStreamReader();
+        const streamReader = new StreamReader();
+        streamReader.readInto(Buffer.from(helloWorld));
         streamReader.readInto(Buffer.from(' star'));
 
         const result = streamReader.readBytes(helloWorld.length + 5);
