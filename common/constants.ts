@@ -1,4 +1,6 @@
 export const SIZEOF_UINT32 = 4;
+export const SIZEOF_TIMESTAMP = 8;
+export const SIZEOF_INDEX = 4;
 
 export const SECOND = 1000;
 export const MINUTE = 60 * SECOND;
@@ -20,10 +22,18 @@ export enum REQUEST_TYPE {
 }
 
 export enum RESPONSE_TYPE {
-    DATA = 0,
-    TIMESTAMP = 1,
+    LINEDATA = 0,
+    BARDATA = 1,
+    TIMESTAMP = 2,
 }
 
+/*
+ * UInt32 for all fields
+ * id - unique id for request
+ * type - LIVE or INTERVAL
+ * barWidth (ms) - BAR_WIDTH value, 0 for line data
+ * start and end (ms) - multiple of barWidth. For line data, multiple of smallest non-zero BAR_WIDTH
+ */
 export type REQUEST = {
     id: number;
     type: REQUEST_TYPE;
@@ -32,10 +42,16 @@ export type REQUEST = {
     end: number;
 };
 
+/*
+ * UInt32 for all fields
+ * id - same as request id. For streaming timestamps, id of most recent LIVE request
+ * type - LINEDATA if request barWidth 0, BARDATA otherwise, TIMESTAMP for streaming timestamps
+ * start and end (ms) - multiple of barWidth.
+ */
 export type RESPONSE = {
     id: number;
     type: RESPONSE_TYPE;
     start: number;
     end: number;
-    data: Uint32Array;
+    data: ArrayBuffer;
 };

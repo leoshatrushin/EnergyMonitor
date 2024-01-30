@@ -1,6 +1,15 @@
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { REQUEST_TYPE, REQUEST, RESPONSE, SIZEOF_UINT32, BAR_WIDTH, RESPONSE_TYPE } from './common/constants';
+import {
+    REQUEST_TYPE,
+    REQUEST,
+    RESPONSE,
+    SIZEOF_UINT32,
+    BAR_WIDTH,
+    RESPONSE_TYPE,
+    SIZEOF_TIMESTAMP,
+    SIZEOF_INDEX,
+} from './common/constants';
 import state from './state';
 import { readUInt32LE } from './utils';
 
@@ -18,10 +27,13 @@ wss.on('timestamp', (timestampbuf: Buffer) => {
         // form response
         const buffer = Buffer.alloc(4 * SIZEOF_UINT32 + timestampbuf.byteLength);
         buffer.writeUInt32LE(0, ws_state.streamingId);
-        buffer.writeUInt32LE(timestampbuf.readUInt32LE(0), 4);
-        buffer.writeUInt32LE(timestampbuf.readUInt32LE(timestampbuf.byteLength - SIZEOF_UINT32), 8);
-        buffer.writeUInt32LE(timestampbuf.byteLength, 12);
-        buffer.set(timestampbuf, 16);
+        buffer.writeUInt32LE(Number(timestampbuf.readBigUInt64LE(0)), SIZEOF_UINT32);
+        buffer.writeUInt32LE(
+            Number(timestampbuf.readBigUInt64LE(timestampbuf.byteLength - SIZEOF_TIMESTAMP)),
+            SIZEOF_UINT32 * 2,
+        );
+        buffer.writeUInt32LE(timestampbuf.byteLength, SIZEOF_UINT32 * 3);
+        buffer.set(timestampbuf, SIZEOF_UINT32 * 4);
 
         // send response
         ws_state.ws.send(buffer);
@@ -51,12 +63,12 @@ function validateRequest(request: REQUEST) {
 // get offset in bar index file for bar corresponding to timestamp
 function getOffset(timestamp: number, barWidth: BAR_WIDTH) {
     const fileState = state[barWidth];
-    return ((timestamp - fileState.firstKey) / barWidth) * SIZEOF_UINT32;
+    return ((timestamp - fileState.firstKey) / barWidth) * SIZEOF_INDEX;
 }
 
 function getTimestamp(offset: number, barWidth: BAR_WIDTH) {
     const fileState = state[barWidth];
-    return fileState.firstKey + (offset / SIZEOF_UINT32) * barWidth;
+    return fileState.firstKey + (offset / SIZEOF_INDEX) * barWidth;
 }
 
 function clamp(min: number, value: number, max: number) {
@@ -68,7 +80,6 @@ function getBounds(request: REQUEST): {
     end: number;
     fileStart: number;
     fileEnd: number;
-    appendLast: boolean;
 } {
     const fileState = state[request.barWidth];
     // line requests are in multiples of min bar width
@@ -88,7 +99,7 @@ function getBounds(request: REQUEST): {
     if (request.type == REQUEST_TYPE.LIVE) {
         // shift start up to end if too small
         const numBars = (request.end - request.start) / barWidth;
-        barStart = Math.max(barStart, barFileState.size - numBars * SIZEOF_UINT32);
+        barStart = Math.max(barStart, barFileState.size - numBars * SIZEOF_INDEX);
         // end is always the last entry
         barEnd = barFileState.size;
         appendLast = true;
@@ -102,15 +113,15 @@ function getBounds(request: REQUEST): {
         // get start timestamp offset
         fileStart = readUInt32LE(barFileState.fd, barStart);
         // also get the previous timestamp so we can calculate the gradient
-        fileStart = Math.max(0, fileStart - SIZEOF_UINT32);
+        fileStart = Math.max(0, fileStart - SIZEOF_TIMESTAMP);
 
         // get end timestamp offset
         if (barEnd == barFileState.size) {
             fileEnd = fileState.size;
         } else {
-            fileEnd = readUInt32LE(barFileState.fd, barEnd - SIZEOF_UINT32);
+            fileEnd = readUInt32LE(barFileState.fd, barEnd - SIZEOF_INDEX);
             // also get the next timestamp so we can calculate the gradient
-            fileEnd = Math.min(fileEnd + SIZEOF_UINT32, fileState.size);
+            fileEnd = Math.min(fileEnd + SIZEOF_TIMESTAMP, fileState.size);
         }
     } else {
         fileStart = barStart;
@@ -120,13 +131,12 @@ function getBounds(request: REQUEST): {
     const end =
         request.type == REQUEST_TYPE.LIVE
             ? getTimestamp(barEnd, barWidth)
-            : getTimestamp(barEnd - SIZEOF_UINT32, barWidth);
+            : getTimestamp(barEnd - SIZEOF_INDEX, barWidth);
     return {
         start: getTimestamp(barStart, barWidth),
         end,
         fileStart,
         fileEnd,
-        appendLast,
     };
 }
 
@@ -167,12 +177,12 @@ wss.on('connection', ws => {
         }
 
         // get bounds
-        const { start, end, fileStart, fileEnd, appendLast } = getBounds(request);
+        const { start, end, fileStart, fileEnd } = getBounds(request);
 
         // form response
         const response: RESPONSE = {
             id: request.id,
-            type: RESPONSE_TYPE.DATA,
+            type: request.barWidth == BAR_WIDTH.LINE ? RESPONSE_TYPE.LINEDATA : RESPONSE_TYPE.BARDATA,
             start,
             end,
             data: null,
@@ -197,12 +207,12 @@ wss.on('connection', ws => {
 
             // calculate differences
             for (let i = 1; i < dataArray.length; i += 1) {
-                dataArray[i - 1] = (dataArray[i] - dataArray[i - 1]) / SIZEOF_UINT32;
+                dataArray[i - 1] = (dataArray[i] - dataArray[i - 1]) / SIZEOF_INDEX;
             }
 
             // append last
             dataArray[dataArray.length - 1] =
-                (state[BAR_WIDTH.LINE].size - dataArray[dataArray.length - 1]) / SIZEOF_UINT32;
+                (state[BAR_WIDTH.LINE].size - dataArray[dataArray.length - 1]) / SIZEOF_INDEX;
         }
 
         // send response

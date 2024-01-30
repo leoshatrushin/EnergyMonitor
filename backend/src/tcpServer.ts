@@ -1,6 +1,6 @@
 import fs from 'fs';
 import net from 'net';
-import { SIZEOF_UINT32, BAR_WIDTH } from './common/constants';
+import { SIZEOF_TIMESTAMP, BAR_WIDTH, SIZEOF_INDEX } from './common/constants';
 import { FILE_STATE } from './constants';
 import { StreamReader, roundDown } from './common/utils';
 import state from './state';
@@ -39,54 +39,52 @@ const tcpServer = net.createServer(socket => {
         }
 
         // append to timestamp file
-        const timestampBuf = streamReader.readBytes(roundDown(streamReader.bytesLeft, SIZEOF_UINT32));
+        const timestampBuf = streamReader.readBytes(roundDown(streamReader.bytesLeft, SIZEOF_TIMESTAMP));
         const timestampFileState = state[BAR_WIDTH.LINE];
         fs.appendFileSync(timestampFileState.fd, timestampBuf);
 
         // create timestamp array
-        const timestamps = new Uint32Array(
-            timestampBuf.buffer,
-            timestampBuf.byteOffset,
-            timestampBuf.byteLength / SIZEOF_UINT32,
-        );
-        const lastTimestamp = timestamps[timestamps.length - 1];
+        const timestamps = new BigUint64Array(timestampBuf.buffer, timestampBuf.byteOffset);
+        const firstTimestamp = Number(timestamps[0]);
+        const lastTimestamp = Number(timestamps[timestamps.length - 1]);
 
         // set first key if file empty
         if (timestampFileState.lastKey == 0) timestampFileState.firstKey = lastTimestamp;
 
         // append to each index file
-        for (const barWidth in state) {
-            if (barWidth == String(BAR_WIDTH.LINE)) continue;
-            const fileState: FILE_STATE = state[barWidth];
+        for (const barWidthStr in state) {
+            const barWidth = Number(barWidthStr);
+            if (barWidth == BAR_WIDTH.LINE) continue;
+            const indexState: FILE_STATE = state[barWidth];
 
             // initialize file and state if empty
-            if (fileState.lastKey == 0) {
-                fileState.firstKey = roundDown(timestamps[0], Number(barWidth));
-                fileState.lastKey = roundDown(timestamps[0], Number(barWidth));
-                const firstOffset = Buffer.alloc(4);
-                firstOffset.writeUInt32LE(0);
-                fs.appendFileSync(fileState.fd, firstOffset);
+            if (indexState.lastKey == 0) {
+                indexState.firstKey = roundDown(firstTimestamp, barWidth);
+                indexState.lastKey = roundDown(firstTimestamp, barWidth);
+                const firstIndex = Buffer.alloc(SIZEOF_INDEX);
+                firstIndex.writeUInt32LE(0);
+                fs.appendFileSync(indexState.fd, firstIndex);
             }
 
             // allocate buffer for new bar offsets
-            const totalNewBars = roundDown(lastTimestamp - fileState.lastKey, Number(barWidth)) / Number(barWidth);
-            const newOffsets = new Uint32Array(totalNewBars);
+            const totalNewBars = roundDown(lastTimestamp - indexState.lastKey, barWidth) / barWidth;
+            const newIndexes = new Uint32Array(totalNewBars);
             let barsWritten = 0;
 
             // fill buffer with new offsets
             for (let i = 0; i < timestamps.length; i++) {
-                const newBars = roundDown(timestamps[i] - fileState.lastKey, Number(barWidth)) / Number(barWidth);
-                newOffsets.fill(timestampFileState.size + i * SIZEOF_UINT32, barsWritten, barsWritten + newBars);
+                const newBars = roundDown(Number(timestamps[i]) - indexState.lastKey, barWidth) / barWidth;
+                newIndexes.fill(timestampFileState.size + i * SIZEOF_TIMESTAMP, barsWritten, barsWritten + newBars);
                 barsWritten += newBars;
 
                 // update state
-                fileState.size += newBars * SIZEOF_UINT32;
-                fileState.lastKey += newBars * Number(barWidth);
-                if (newBars) fileState.lastOffset = timestampFileState.size + i * SIZEOF_UINT32;
+                indexState.size += newBars * SIZEOF_INDEX;
+                indexState.lastKey += newBars * barWidth;
+                if (newBars) indexState.lastOffset = timestampFileState.size + i * SIZEOF_TIMESTAMP;
             }
 
             // append new offsets to file
-            fs.appendFileSync(fileState.fd, new Uint8Array(newOffsets.buffer));
+            fs.appendFileSync(indexState.fd, new Uint8Array(newIndexes.buffer));
         }
 
         // update state

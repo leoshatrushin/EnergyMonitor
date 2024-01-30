@@ -30,10 +30,6 @@ export class StreamReader {
     }
 }
 
-export function to2020Date(timestamp: number) {
-    return timestamp - Date.UTC(2020);
-}
-
 export function roundDown(input: number, multiple: number) {
     return input - (input % multiple);
 }

@@ -34,7 +34,9 @@ jest.mock('../src/constants', () => {
     };
 });
 
-const SIZEOF_UINT32 = 4;
+const SIZEOF_TIMESTAMP = 8;
+const SIZEOF_INDEX = 4;
+const MINUTE = 60000;
 
 const dataDir = path.resolve('./tests/tcpserverdata');
 fs.readdirSync(dataDir).forEach(file => {
@@ -56,8 +58,6 @@ if (process.env.mode === 'production') {
     client = new net.Socket().connect(SENSOR_PORT, 'localhost');
 }
 
-const MINUTE = 60000;
-
 let clientFinishedResolver: (value: unknown) => void;
 const clientFinished = new Promise(resolve => {
     clientFinishedResolver = resolve;
@@ -76,15 +76,15 @@ function iterate(fn: (i: number, j: number, state: any) => void, initialState: a
 
 async function writeTimestamp(i: number, j: number) {
     if (i > 15) await new Promise(resolve => setTimeout(resolve, 100));
-    const buffer = Buffer.alloc(SIZEOF_UINT32);
-    buffer.writeUInt32LE(i * MINUTE + j);
+    const buffer = Buffer.alloc(SIZEOF_TIMESTAMP);
+    buffer.writeBigUInt64LE(BigInt(i * MINUTE + j));
     client.write(buffer);
     numTimestampsSent++;
 }
 
-function checkTimestamps(i: number, j: number, state: { timestamps: Uint32Array; count: number }) {
+function checkTimestamps(i: number, j: number, state: { timestamps: BigUint64Array; count: number }) {
     const { timestamps, count } = state;
-    expect(timestamps[count]).toBe(i * MINUTE + j);
+    expect(Number(timestamps[count])).toBe(i * MINUTE + j);
     return { timestamps, count: count + 1 };
 }
 
@@ -103,7 +103,7 @@ describe('tcpServer', () => {
     it('should have written the correct number of timestamps', async () => {
         await clientFinished;
         const size = fs.fstatSync(fs.openSync('./tests/tcpserverdata/timestamps.bin', 'r')).size;
-        expect(size).toBe(numTimestampsSent * SIZEOF_UINT32);
+        expect(size).toBe(numTimestampsSent * SIZEOF_TIMESTAMP);
     });
 
     it('should have written timestamps correctly', async () => {
@@ -111,7 +111,7 @@ describe('tcpServer', () => {
 
         const data = fs.readFileSync('./tests/tcpserverdata/timestamps.bin');
 
-        const timestamps = new Uint32Array(data.buffer, data.byteOffset, numTimestampsSent);
+        const timestamps = new BigUint64Array(data.buffer, data.byteOffset, numTimestampsSent);
         const count = 0;
 
         iterate(checkTimestamps, { timestamps, count });
@@ -120,7 +120,7 @@ describe('tcpServer', () => {
     it('should have written the correct number of minutes', async () => {
         await clientFinished;
         const size = fs.fstatSync(fs.openSync('./tests/tcpserverdata/minutes.bin', 'r')).size;
-        expect(size).toBe((NUM_MINUTES - 1) * SIZEOF_UINT32);
+        expect(size).toBe((NUM_MINUTES - 1) * SIZEOF_INDEX);
     });
 
     it('should have written minutes correctly', async () => {
@@ -129,7 +129,7 @@ describe('tcpServer', () => {
         const minutes = new Uint32Array(data.buffer, data.byteOffset, NUM_MINUTES - 1);
         let count = 0;
         for (let i = 1; i < NUM_MINUTES; i++) {
-            expect(minutes[i - 1]).toBe(count * SIZEOF_UINT32);
+            expect(minutes[i - 1]).toBe(count * SIZEOF_TIMESTAMP);
             count += i;
         }
     });
@@ -137,17 +137,17 @@ describe('tcpServer', () => {
     it('should have written the correct number of 5 minutes', async () => {
         await clientFinished;
         const size = fs.fstatSync(fs.openSync('./tests/tcpserverdata/5minutes.bin', 'r')).size;
-        expect(size).toBe((NUM_MINUTES / 5) * SIZEOF_UINT32);
+        expect(size).toBe((NUM_MINUTES / 5) * SIZEOF_INDEX);
     });
 
     it('should have written 5 minutes correctly', async () => {
         await clientFinished;
         const data = fs.readFileSync('./tests/tcpserverdata/5minutes.bin');
-        const offsets = new Uint32Array(data.buffer, data.byteOffset, NUM_MINUTES / 5);
+        const indexes = new Uint32Array(data.buffer, data.byteOffset, NUM_MINUTES / 5);
         let count = 0;
         for (let i = 0; i < NUM_MINUTES; i++) {
             if (i % 5 == 0) {
-                expect(offsets[Math.floor(i / 5)]).toBe(count * SIZEOF_UINT32);
+                expect(indexes[Math.floor(i / 5)]).toBe(count * SIZEOF_TIMESTAMP);
             }
             count += i;
         }

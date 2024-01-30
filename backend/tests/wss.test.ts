@@ -36,6 +36,8 @@ require('../src/httpServer');
 const FRONTEND_PORT = process.env.FRONTEND_PORT;
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 const SIZEOF_UINT32 = 4;
+const SIZEOF_TIMESTAMP = 8;
+const SIZEOF_INDEX = 4;
 const NUM_MINUTES = 20;
 const MINUTE = 60000;
 
@@ -62,18 +64,17 @@ function readResponse(data: Buffer): RESPONSE {
     const end = data.readUInt32LE(12);
     const alignedBuffer = new Uint8Array(data.byteLength - 16);
     alignedBuffer.set(data.subarray(16));
-    const dataBuf = new Uint32Array(alignedBuffer.buffer);
     return {
         id,
         type,
         start,
         end,
-        data: dataBuf,
+        data: alignedBuffer,
     };
 }
 
 describe('websocket interval requests', () => {
-    it('should respond properly for line data within bounds', async () => {
+    it('should respond properly for interval line data requests within bounds', async () => {
         const request: REQUEST = {
             id: 1,
             type: REQUEST_TYPE.INTERVAL,
@@ -83,27 +84,32 @@ describe('websocket interval requests', () => {
         };
         const buffer = writeRequest(request);
 
-        await new Promise(resolve => {
+        await new Promise((resolve, reject) => {
             function checkResponse(responseBuf: Buffer) {
-                const { id, type, start, end, data } = readResponse(responseBuf);
+                try {
+                    let { id, type, start, end, data } = readResponse(responseBuf);
+                    data = new BigUint64Array((data as Uint8Array).buffer);
 
-                expect(id).toEqual(request.id);
-                expect(type).toEqual(RESPONSE_TYPE.DATA);
-                expect(start).toEqual(request.start);
-                expect(end).toEqual(request.end);
-                let sum = 0;
-                for (let i = 0; i < NUM_MINUTES - 2; i++) sum += i;
-                expect(data.byteLength).toEqual(sum * SIZEOF_UINT32 + SIZEOF_UINT32);
-                let count = 0;
-                for (let i = 0; i < NUM_MINUTES - 2; i++) {
-                    for (let j = 0; j < i; j++) {
-                        expect(data[count]).toEqual(i * MINUTE + j);
-                        count++;
+                    expect(id).toEqual(request.id);
+                    expect(type).toEqual(RESPONSE_TYPE.LINEDATA);
+                    expect(start).toEqual(request.start);
+                    expect(end).toEqual(request.end);
+                    let sum = 0;
+                    for (let i = 0; i < NUM_MINUTES - 2; i++) sum += i;
+                    expect(data.byteLength).toEqual(sum * SIZEOF_TIMESTAMP + SIZEOF_TIMESTAMP);
+                    let count = 0;
+                    for (let i = 0; i < NUM_MINUTES - 2; i++) {
+                        for (let j = 0; j < i; j++) {
+                            expect(data[count]).toEqual(i * MINUTE + j);
+                            count++;
+                        }
                     }
-                }
 
-                ws.removeListener('message', checkResponse);
-                resolve(null);
+                    ws.removeListener('message', checkResponse);
+                    resolve(null);
+                } catch (e) {
+                    reject(e);
+                }
             }
             ws.on('message', checkResponse);
 
@@ -124,34 +130,39 @@ describe('websocket interval requests', () => {
         const buffer = writeRequest(request);
         ws.send(buffer);
 
-        await new Promise(resolve => {
+        await new Promise((resolve, reject) => {
             function checkResponse(responseBuf: Buffer) {
-                const { id, type, start, end, data } = readResponse(responseBuf);
+                try {
+                    let { id, type, start, end, data } = readResponse(responseBuf);
+                    data = new BigUint64Array((data as Uint8Array).buffer);
 
-                expect(id).toEqual(request.id);
-                expect(type).toEqual(RESPONSE_TYPE.DATA);
-                expect(start).toEqual((NUM_MINUTES - 17) * MINUTE);
-                expect(end).toEqual(NUM_MINUTES * MINUTE);
-                let sum = 0;
-                for (let i = NUM_MINUTES - 17; i < NUM_MINUTES; i++) sum += i;
-                expect(data.byteLength).toEqual(SIZEOF_UINT32 + sum * SIZEOF_UINT32);
-                expect(data[0]).toEqual((NUM_MINUTES - 18) * MINUTE + (NUM_MINUTES - 19));
-                let count = 1;
-                for (let i = NUM_MINUTES - 17; i < NUM_MINUTES; i++) {
-                    for (let j = 0; j < i; j++) {
-                        expect(data[count]).toEqual(i * MINUTE + j);
-                        count++;
+                    expect(id).toEqual(request.id);
+                    expect(type).toEqual(RESPONSE_TYPE.LINEDATA);
+                    expect(start).toEqual((NUM_MINUTES - 17) * MINUTE);
+                    expect(end).toEqual(NUM_MINUTES * MINUTE);
+                    let sum = 0;
+                    for (let i = NUM_MINUTES - 17; i < NUM_MINUTES; i++) sum += i;
+                    expect(data.byteLength).toEqual(SIZEOF_TIMESTAMP + sum * SIZEOF_TIMESTAMP);
+                    expect(data[0]).toEqual((NUM_MINUTES - 18) * MINUTE + (NUM_MINUTES - 19));
+                    let count = 1;
+                    for (let i = NUM_MINUTES - 17; i < NUM_MINUTES; i++) {
+                        for (let j = 0; j < i; j++) {
+                            expect(data[count]).toEqual(i * MINUTE + j);
+                            count++;
+                        }
                     }
-                }
 
-                ws.removeListener('message', checkResponse);
-                resolve(null);
+                    ws.removeListener('message', checkResponse);
+                    resolve(null);
+                } catch (e) {
+                    reject(e);
+                }
             }
             ws.on('message', checkResponse);
         });
     });
 
-    it('should respond properly for live minute bar requests', async () => {
+    it('should respond properly for live bar data requests', async () => {
         const request: REQUEST = {
             id: 3,
             type: REQUEST_TYPE.LIVE,
@@ -162,23 +173,27 @@ describe('websocket interval requests', () => {
         const buffer = writeRequest(request);
         ws.send(buffer);
 
-        await new Promise(resolve => {
+        await new Promise((resolve, reject) => {
             function checkResponse(responseBuf: Buffer) {
-                const { id, type, start, end, data } = readResponse(responseBuf);
-                const numBars = (request.end - request.start) / request.barWidth;
-                debugger;
+                try {
+                    let { id, type, start, end, data } = readResponse(responseBuf);
+                    data = new Uint32Array((data as Uint8Array).buffer);
+                    const numBars = (request.end - request.start) / request.barWidth;
 
-                expect(id).toEqual(request.id);
-                expect(type).toEqual(RESPONSE_TYPE.DATA);
-                expect(start).toEqual((NUM_MINUTES - numBars) * MINUTE);
-                expect(end).toEqual(NUM_MINUTES * MINUTE);
-                expect(data.byteLength).toEqual(numBars * SIZEOF_UINT32);
-                for (let i = 0; i < numBars; i++) {
-                    expect(data[i]).toEqual(NUM_MINUTES - numBars + i);
+                    expect(id).toEqual(request.id);
+                    expect(type).toEqual(RESPONSE_TYPE.BARDATA);
+                    expect(start).toEqual((NUM_MINUTES - numBars) * MINUTE);
+                    expect(end).toEqual(NUM_MINUTES * MINUTE);
+                    expect(data.byteLength).toEqual(numBars * SIZEOF_UINT32);
+                    for (let i = 0; i < numBars; i++) {
+                        expect(data[i]).toEqual(NUM_MINUTES - numBars + i);
+                    }
+
+                    ws.removeListener('message', checkResponse);
+                    resolve(null);
+                } catch (e) {
+                    reject(e);
                 }
-
-                ws.removeListener('message', checkResponse);
-                resolve(null);
             }
             ws.on('message', checkResponse);
         });
