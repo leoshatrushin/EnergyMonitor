@@ -23,7 +23,7 @@ extern const uint8_t server_root_cert_pem_end[]   asm(CERT_END);
 #define ADC_ATTEN ADC_ATTEN_DB_12 // use 12dB attenuation for full range
 #define ADC_CHANNEL ADC_CHANNEL_6 // GPIO34
 #define ADC_READ_INTERVAL_MS 1000
-#define VOLTAGE_THRESHOLD 1800
+#define VOLTAGE_THRESHOLD 1500
 
 EventGroupHandle_t s_wifi_event_group;
 TaskHandle_t socket_task_handle;
@@ -38,6 +38,7 @@ int Esp_tls_conn_write(esp_tls_t *tls, const void *data, int len) {
     int written_bytes = 0;
     while (written_bytes < len) {
         int bytes_written = esp_tls_conn_write(tls, data + written_bytes, len - written_bytes);
+        ESP_LOGI(TAG, "bytes_written: %d", bytes_written);
         if (bytes_written < 0 && bytes_written != ESP_TLS_ERR_SSL_WANT_READ && bytes_written != ESP_TLS_ERR_SSL_WANT_WRITE) {
             ESP_LOGW(TAG, "esp_tls_conn_write failed: errno %d", errno);
             return -1;
@@ -205,6 +206,7 @@ void app_main(void) {
                 /* if (partition_offset % FLASH_SECTOR_SIZE == 0) curr_map_ptr = swap_map_ptr(curr_map_ptr); */
                 /* if (partition_offset == partition->size) partition_offset = 0; */
                 Esp_tls_conn_write(tls, &time_ms, sizeof(time_ms));
+                ESP_LOGI(TAG, "Sent timestamp");
             }
         } else {
             ESP_LOGW(TAG, "ADC read failed");
