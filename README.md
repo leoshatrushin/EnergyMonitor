@@ -1,4 +1,4 @@
-The server is up [here](https://energymonitor.leoshatrushin.com), but it's password-protected.
+The server is up [here](https://energymonitor.leoshatrushin.com), but it's password-protected and the ESP32 is not up right now.
 
 # How it works
 ## esp/
