@@ -10,4 +10,4 @@ The server is up [here](https://energymonitor.leoshatrushin.com), but it's passw
 - Server streams live timestamps and responds to requests from frontend via application-level protocol over websockets
 ## web/
 - NGINX handles HTTPS and forwards
-- The API and indexes for viewing arbitrary graphs is implemented in the backend but only viewing live data is implemented in the frontend
+- The API and indexes for viewing arbitrary graphs is implemented in the backend but only viewing live data was finished being implemented in the frontend
