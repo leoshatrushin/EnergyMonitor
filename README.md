@@ -1,4 +1,4 @@
-The server is up [here](energymonitor.leoshatrushin.com), but it's password-protected.
+The server is up [here](https://energymonitor.leoshatrushin.com), but it's password-protected.
 
 # How it works
 ## esp/
