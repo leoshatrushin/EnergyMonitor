@@ -6,7 +6,7 @@ The server is up [here](https://energymonitor.leoshatrushin.com), but it's passw
 - Sends a timestamp over TCP+TLS to the server every time
 - NGINX handles TLS and forwards
 ## backend/
-- Server saves timestamps and builds up indexes
+- Server saves timestamps and builds up indexes in files
 - Server streams live timestamps and responds to requests from frontend via application-level protocol over websockets
 ## web/
 - NGINX handles HTTPS and forwards
